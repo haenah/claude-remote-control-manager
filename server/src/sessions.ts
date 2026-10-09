@@ -24,7 +24,8 @@ import { HttpError } from "./http";
 import { SESSION_ARGS, processTable, terminate } from "./proc";
 import { rememberSessionStart } from "./recent-projects";
 
-const SESSION_URL = /https:\/\/claude\.ai\/code\/session_[A-Za-z0-9_-]+/g;
+// The TUI also repaints the link shortened ("session_01…"); a real id is far longer.
+const SESSION_URL = /https:\/\/claude\.ai\/code\/session_[A-Za-z0-9_-]{20,}/g;
 // OSC first: its introducer `ESC ]` would otherwise match the two-byte branch.
 const ANSI = /\x1b(?:\][^\x07\x1b]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~]|[@-Z\\-_])/g;
 

@@ -67,7 +67,7 @@ while read -r pid ppid; do
   gp=$(ps -o ppid= -p "$ppid" | tr -d ' ')
   log=$( { ps -o args= -p "$ppid"; [ -n "$gp" ] && ps -o args= -p "$gp"; } | grep -oE '[^ ]*/session-[0-9a-f]{12}\.log' | head -1)
   url=''
-  [ -n "$log" ] && [ -f "$log" ] && url=$(head -c 4194304 "$log" | grep -aoE 'https://claude\.ai/code/session_[A-Za-z0-9_-]+' | tail -1)
+  [ -n "$log" ] && [ -f "$log" ] && url=$(head -c 4194304 "$log" | grep -aoE 'https://claude\.ai/code/session_[A-Za-z0-9_-]{20,}' | tail -1)
   argv=$(argv_of "$pid")
   printf 'R\t%s\t%s\t%s\t%s\t%s\t%s\n' "$pid" "$cwd" "$argv" "$log" "$url" "$(ps -o lstart= -p "$pid")"
   id=$(printf '%s' "$argv" | tr '\037' ' ' | grep -oE -- '--(session-id|resume)[= ][0-9a-f-]{36}' | grep -oE '[0-9a-f-]{36}$' | head -1)

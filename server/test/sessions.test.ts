@@ -3,10 +3,12 @@ import { exitReason, extractSessionUrl, stripAnsi } from "../src/sessions";
 
 test("extractSessionUrl takes the newest link, including OSC-8 hyperlink targets", () => {
   const log = [
-    "\x1b]8;;https://claude.ai/code/session_OLD?from=cli\x07old\x1b]8;;\x07",
-    "Continue in https://claude.ai/code/session_NEW_1-x",
+    "\x1b]8;;https://claude.ai/code/session_01OLDaaaaaaaaaaaaaaaaaaaaa?from=cli\x07old\x1b]8;;\x07",
+    "Continue in https://claude.ai/code/session_01NEW_1-xbbbbbbbbbbbbbbbbbb",
+    // The status line repaints a shortened link; it must not win.
+    "https://claude.ai/code/session_01…",
   ].join("\n");
-  expect(extractSessionUrl(log)).toBe("https://claude.ai/code/session_NEW_1-x");
+  expect(extractSessionUrl(log)).toBe("https://claude.ai/code/session_01NEW_1-xbbbbbbbbbbbbbbbbbb");
   expect(extractSessionUrl("starting…")).toBeNull();
 });
 
