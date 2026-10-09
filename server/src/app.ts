@@ -145,9 +145,7 @@ app.post("/api/projects/:key/resume", async (c) => {
   if (!UUID.test(body.conversationId ?? "")) throw new HttpError(422, "Invalid conversation id");
   const { host, path, label } = await resolveProject(c.req.param("key"));
   // Two processes appending to one transcript would interleave it.
-  const live = (await readLiveSessions(host)).find(
-    (s) => s.conversationId === body.conversationId || s.conversations.some((x) => x.id === body.conversationId),
-  );
+  const live = (await readLiveSessions(host)).find((s) => s.conversationId === body.conversationId);
   if (live) throw new HttpError(409, "This conversation is already running", { url: live.url });
   await acceptClaudeTrust(host, path);
   return c.json(
@@ -164,13 +162,13 @@ app.post("/api/projects/:key/resume", async (c) => {
 app.get("/api/projects/:key/history", async (c) => {
   const { host, path } = await resolveProject(c.req.param("key"));
   const [past, live] = await Promise.all([readHistory(host, path), readLiveSessions(host)]);
-  const running = new Set(live.flatMap((s) => [s.conversationId, ...s.conversations.map((x) => x.id)]));
+  const running = new Set(live.map((s) => s.conversationId));
   return c.json(past.map((p) => ({ ...p, live: running.has(p.id) })));
 });
 
 // ── Sessions ─────────────────────────────────────────────────────────────
 
-/** Stop a session (or bridge) by pid, on this machine or ?host=<name>. */
+/** Stop a session by pid, on this machine or ?host=<name>. */
 app.delete("/api/sessions/:pid", async (c) => {
   const pid = c.req.param("pid");
   if (!/^\d+$/.test(pid)) throw new HttpError(422, "Invalid pid");

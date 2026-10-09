@@ -62,8 +62,8 @@ function signal(pids: number[], sig: NodeJS.Signals): void {
 /** How long a killed session gets after SIGTERM before it is SIGKILLed. */
 export const KILL_GRACE_MS = 10_000;
 
-/** Matches the argv of a `claude remote-control` bridge process. */
-export const BRIDGE_ARGS = /^(?:\S*\/)?claude remote-control(?:\s|$)/;
+/** Matches the argv of a Remote Control session's claude process. */
+export const SESSION_ARGS = /^(?:\S*\/)?claude\s.*--remote-control(?:[=\s]|$)/;
 
 /** Send *sig* and wait up to *graceMs* for *pids* to go; returns the ones still alive. */
 async function signalAndWait(pids: number[], sig: NodeJS.Signals, graceMs: number): Promise<number[]> {
@@ -79,10 +79,10 @@ async function signalAndWait(pids: number[], sig: NodeJS.Signals, graceMs: numbe
 }
 
 /**
- * Stop *pid* and its whole process tree, bridge first.
+ * Stop *pid* and its whole process tree, claude first.
  *
- * The `claude remote-control` bridge gets SIGTERM on its own and time to shut
- * down: it has to tell claude.ai it is gone. Signalling the tree at once kills
+ * claude gets SIGTERM on its own and time to shut down: it has to tell
+ * claude.ai it is gone. Signalling the tree at once kills
  * `script`, whose closing pty SIGHUPs claude mid-shutdown — claude.ai then keeps
  * the folder marked "already served" and every new session there fails.
  *
@@ -93,10 +93,10 @@ async function signalAndWait(pids: number[], sig: NodeJS.Signals, graceMs: numbe
 export async function terminate(pid: number, graceMs = KILL_GRACE_MS): Promise<void> {
   const table = await processTable();
   const tree = [pid, ...descendants(table, pid)];
-  const bridges = tree.filter((t) => BRIDGE_ARGS.test(table.get(t)?.args ?? ""));
+  const claudes = tree.filter((t) => SESSION_ARGS.test(table.get(t)?.args ?? ""));
   const deadline = Date.now() + graceMs;
-  if (bridges.length) await signalAndWait(bridges, "SIGTERM", graceMs);
-  // Whatever the bridge left behind: script, the stdin feeder, session workers.
+  if (claudes.length) await signalAndWait(claudes, "SIGTERM", graceMs);
+  // Whatever claude left behind: script, the stdin feeder, tool processes.
   const rest = tree.filter((t) => isAlive(table, t));
   const left = await signalAndWait(rest, "SIGTERM", Math.max(2000, deadline - Date.now()));
   if (left.length) {

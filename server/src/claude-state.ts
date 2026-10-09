@@ -2,14 +2,11 @@
  * Live and past Claude sessions, read from where claude itself keeps them —
  * rcm stores none of this. Sources, per host:
  *
- *  - the process table: every `claude --remote-control` (an interactive
- *    session with Remote Control) and `claude remote-control` (a bridge
- *    serving many conversations) that is running, whoever started it
+ *  - the process table: every `claude --remote-control` session that is
+ *    running, whoever started it. `claude remote-control` bridges are left
+ *    out: rcm cannot start them, so listing them only confuses.
  *  - the `script` log of sessions rcm started: the log path is in the parent
  *    process's argv, and the claude.ai session link is printed into it
- *  - ~/.claude/projects/<cwd>/bridge-pointer.json: a bridge's environment and
- *    pre-created session
- *  - ~/.claude/sessions/<pid>.json: a bridge's live conversations, with status
  *  - ~/.claude/projects/<cwd>/<uuid>.jsonl: transcripts, for titles and history
  *
  * The same bash script runs locally and over ssh, so both hosts are read the
@@ -19,40 +16,25 @@
 import type { RemoteHost } from "./config";
 import { runScript, shQuote } from "./hosts";
 
-/** One live conversation on a bridge. */
-export interface Conversation {
-  pid: number;
-  /** Local transcript id. */
-  id: string;
-  url: string;
-  status: string | null;
-  title: string | null;
-  updatedAt: string | null;
-}
-
 export interface LiveSession {
   /** Host name, '' for this machine. */
   host: string;
   pid: number;
   cwd: string;
-  kind: "interactive" | "bridge";
-  /** --remote-control <name> / --name. */
+  /** --remote-control <name>. */
   name: string | null;
   /** Claude's own title for the conversation, once it has one. */
   title: string | null;
-  /** Local transcript id (interactive sessions). */
+  /** Local transcript id. */
   conversationId: string | null;
   /** claude.ai link to the conversation. */
   url: string | null;
-  /** Bridges: opens a fresh conversation in the folder. */
-  envUrl: string | null;
   permissionMode: string | null;
   startedAt: string | null;
   /** Last change to the conversation's transcript. */
   lastActivity: string | null;
   /** Started by rcm (its `script` log is known). */
   managed: boolean;
-  conversations: Conversation[];
 }
 
 export interface PastConversation {
@@ -79,29 +61,16 @@ export const STATE_SCRIPT =
   String.raw`
 cwd_of() { if [ -r "/proc/$1/cwd" ]; then readlink "/proc/$1/cwd"; else lsof -a -p "$1" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p'; fi; }
 argv_of() { if [ -r "/proc/$1/cmdline" ]; then tr '\0' '\037' < "/proc/$1/cmdline"; else ps -o args= -p "$1"; fi; }
-ps -A -o pid=,ppid=,args= | awk '{ n = split($3, a, "/") } a[n] == "claude" && ($4 == "remote-control" || $0 ~ / --remote-control([= ]|$)/) && $0 !~ / --print( |$)/ { print $1, $2 }' |
+ps -A -o pid=,ppid=,args= | awk '{ n = split($3, a, "/") } a[n] == "claude" && $0 ~ / --remote-control([= ]|$)/ && $0 !~ / --print( |$)/ { print $1, $2 }' |
 while read -r pid ppid; do
   cwd=$(cwd_of "$pid")
   gp=$(ps -o ppid= -p "$ppid" | tr -d ' ')
   log=$( { ps -o args= -p "$ppid"; [ -n "$gp" ] && ps -o args= -p "$gp"; } | grep -oE '[^ ]*/session-[0-9a-f]{12}\.log' | head -1)
   url=''
   [ -n "$log" ] && [ -f "$log" ] && url=$(head -c 4194304 "$log" | grep -aoE 'https://claude\.ai/code/session_[A-Za-z0-9_-]+' | tail -1)
-  ptr="$C/projects/$(enc "$cwd")/bridge-pointer.json"
-  pj=''; [ -f "$ptr" ] && pj=$(tr -d '\n' < "$ptr")
   argv=$(argv_of "$pid")
-  printf 'R\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$pid" "$cwd" "$argv" "$log" "$url" "$pj" "$(ps -o lstart= -p "$pid")"
+  printf 'R\t%s\t%s\t%s\t%s\t%s\t%s\n' "$pid" "$cwd" "$argv" "$log" "$url" "$(ps -o lstart= -p "$pid")"
   id=$(printf '%s' "$argv" | tr '\037' ' ' | grep -oE -- '--(session-id|resume)[= ][0-9a-f-]{36}' | grep -oE '[0-9a-f-]{36}$' | head -1)
-  [ -n "$id" ] && transcript "$id" "$cwd"
-done
-for f in "$C"/sessions/*.json; do
-  [ -f "$f" ] || continue
-  p=$(basename "$f" .json)
-  kill -0 "$p" 2>/dev/null || continue
-  grep -q '"bridgeSessionId"' "$f" || continue
-  j=$(tr -d '\n' < "$f")
-  printf 'C\t%s\t%s\n' "$(ps -o ppid= -p "$p" | tr -d ' ')" "$j"
-  id=$(printf '%s' "$j" | grep -oE '"sessionId":"[^"]+"' | head -1 | cut -d'"' -f4)
-  cwd=$(printf '%s' "$j" | grep -oE '"cwd":"[^"]+"' | head -1 | cut -d'"' -f4)
   [ -n "$id" ] && transcript "$id" "$cwd"
 done
 `;
@@ -153,46 +122,26 @@ export async function readLiveSessions(host: RemoteHost | null): Promise<LiveSes
 
 /** Parse the state script's output. */
 export function parseState(stdout: string, hostName: string): LiveSession[] {
-  const sessions = new Map<number, LiveSession>();
-  const children: { ppid: number; json: Record<string, unknown> }[] = [];
+  const sessions: LiveSession[] = [];
   const transcripts = new Map<string, { title: string | null; mtime: string | null }>();
 
   for (const line of stdout.split("\n")) {
     const f = line.split("\t");
-    if (f[0] === "R" && f.length >= 8) {
-      const [, pid, cwd, argv, log, url, pointer, lstart] = f as string[];
-      // `claude remote-control …` is a bridge; `claude --remote-control …` an interactive session.
-      const bridge = argv!.split(/[\x1f\s]+/)[1] === "remote-control";
-      let ptr: { sessionId?: string; environmentId?: string; pid?: number } = {};
-      try {
-        ptr = pointer ? JSON.parse(pointer) : {};
-      } catch {
-        // A pointer being rewritten; skip it this round.
-      }
-      // A pointer outlives its bridge, so only one naming this pid counts.
-      const ownPointer = bridge && ptr.pid === Number(pid);
-      sessions.set(Number(pid), {
+    if (f[0] === "R" && f.length >= 7) {
+      const [, pid, cwd, argv, log, url, lstart] = f as string[];
+      sessions.push({
         host: hostName,
         pid: Number(pid),
         cwd: cwd!,
-        kind: bridge ? "bridge" : "interactive",
-        name: (bridge ? flag(argv!, "--name") : flag(argv!, "--remote-control")) || null,
+        name: flag(argv!, "--remote-control") || null,
         title: null,
-        conversationId: bridge ? null : flag(argv!, "--session-id") || flag(argv!, "--resume") || null,
-        url: url || (ownPointer && ptr.sessionId ? sessionUrl(ptr.sessionId) : null),
-        envUrl: ownPointer && ptr.environmentId ? `https://claude.ai/code?environment=${ptr.environmentId}` : null,
+        conversationId: flag(argv!, "--session-id") || flag(argv!, "--resume") || null,
+        url: url || null,
         permissionMode: flag(argv!, "--permission-mode") || (flag(argv!, "--dangerously-skip-permissions") !== null ? "bypassPermissions" : null),
         startedAt: parseDate(lstart),
         lastActivity: null,
         managed: !!log,
-        conversations: [],
       });
-    } else if (f[0] === "C" && f.length >= 3) {
-      try {
-        children.push({ ppid: Number(f[1]), json: JSON.parse(f.slice(2).join("\t")) });
-      } catch {
-        // Half-written session file.
-      }
     } else if (f[0] === "T" && f[1]) {
       transcripts.set(f[1], {
         title: aiTitle(f.slice(3).join("\t")),
@@ -201,26 +150,14 @@ export function parseState(stdout: string, hostName: string): LiveSession[] {
     }
   }
 
-  for (const { ppid, json } of children) {
-    const parent = sessions.get(ppid);
-    if (!parent || typeof json.bridgeSessionId !== "string") continue;
-    parent.conversations.push({
-      pid: Number(json.pid),
-      id: String(json.sessionId ?? ""),
-      url: sessionUrl(json.bridgeSessionId),
-      status: typeof json.status === "string" ? json.status : null,
-      title: transcripts.get(String(json.sessionId))?.title ?? null,
-      updatedAt: typeof json.updatedAt === "number" ? new Date(json.updatedAt).toISOString() : null,
-    });
-  }
-  for (const s of sessions.values()) {
+  for (const s of sessions) {
     const t = s.conversationId ? transcripts.get(s.conversationId) : undefined;
     s.title = t?.title ?? null;
     // The transcript moves when the conversation does; the terminal log
     // (repainted constantly by the TUI) would always read "just now".
-    s.lastActivity = t?.mtime ?? s.conversations.map((c) => c.updatedAt).filter(Boolean).sort().at(-1) ?? null;
+    s.lastActivity = t?.mtime ?? null;
   }
-  return [...sessions.values()];
+  return sessions;
 }
 
 export const HISTORY_SCRIPT =

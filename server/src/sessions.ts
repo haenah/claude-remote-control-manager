@@ -21,7 +21,7 @@ import { join } from "node:path";
 import { sessionLogDir, type PermissionMode, type RemoteHost } from "./config";
 import { localEnv, runScript, shQuote } from "./hosts";
 import { HttpError } from "./http";
-import { BRIDGE_ARGS, processTable, terminate } from "./proc";
+import { SESSION_ARGS, processTable, terminate } from "./proc";
 import { rememberSessionStart } from "./recent-projects";
 
 const SESSION_URL = /https:\/\/claude\.ai\/code\/session_[A-Za-z0-9_-]+/g;
@@ -209,11 +209,8 @@ head -c 4194304 "$log" 2>/dev/null
   return { status: "failed", url: null, name: o.name, conversationId, error };
 }
 
-/** Matches an interactive Remote Control session's argv. */
-const INTERACTIVE_ARGS = /^(?:\S*\/)?claude\s.*--remote-control(?:[=\s]|$)/;
-
 /**
- * Stop a Remote Control session or bridge by pid. Only a pid that is one right
+ * Stop a Remote Control session by pid. Only a pid that is one right
  * now is touched, so a stale or forged request cannot kill anything else.
  */
 export async function stopSession(host: RemoteHost | null, pid: number): Promise<void> {
@@ -221,7 +218,7 @@ export async function stopSession(host: RemoteHost | null, pid: number): Promise
     const res = await runScript(
       host,
       `a=$(ps -o args= -p ${pid}) || exit 3
-printf '%s' "$a" | grep -qE '(^|/)claude( remote-control| .*--remote-control)' || exit 3
+printf '%s' "$a" | grep -qE '(^|/)claude .*--remote-control' || exit 3
 kill -TERM ${pid}
 i=0; while kill -0 ${pid} 2>/dev/null && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done
 kill -KILL ${pid} 2>/dev/null; exit 0
@@ -232,7 +229,7 @@ kill -KILL ${pid} 2>/dev/null; exit 0
     return;
   }
   const p = (await processTable()).get(pid);
-  if (!p || !(BRIDGE_ARGS.test(p.args) || INTERACTIVE_ARGS.test(p.args))) throw new HttpError(404, "No such session");
+  if (!p || !SESSION_ARGS.test(p.args)) throw new HttpError(404, "No such session");
   // claude gets to shut down cleanly (and tell claude.ai); its `script`
   // wrapper and stdin feeder then exit on their own.
   await terminate(pid);

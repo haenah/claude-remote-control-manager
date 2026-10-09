@@ -24,16 +24,6 @@ export interface HostStatus {
   error: string | null;
 }
 
-/** A live conversation on a bridge. */
-export interface Conversation {
-  pid: number;
-  id: string;
-  url: string;
-  status: string | null;
-  title: string | null;
-  updatedAt: string | null;
-}
-
 /** A running Remote Control process, read from the host — rcm stores none of this. */
 export interface LiveSession {
   host: string;
@@ -41,18 +31,15 @@ export interface LiveSession {
   cwd: string;
   /** Project key, when cwd is one of the listed projects. */
   project: string | null;
-  kind: "interactive" | "bridge";
   name: string | null;
   title: string | null;
   conversationId: string | null;
   url: string | null;
-  envUrl: string | null;
   permissionMode: string | null;
   startedAt: string | null;
   lastActivity: string | null;
   /** Started from rcm (vs. a terminal elsewhere). */
   managed: boolean;
-  conversations: Conversation[];
 }
 
 export interface Overview {

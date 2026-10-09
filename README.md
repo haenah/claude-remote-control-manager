@@ -13,9 +13,9 @@ on the public internet.
 
 - **Start sessions** — `claude --remote-control` in any project, several per
   folder, each with a claude.ai link to attach from the app or browser.
-- **See everything running** — every Remote Control session and bridge on the
-  machine, including ones started from a terminal, with Claude's own titles and
-  (for bridges) each conversation's idle/busy status.
+- **See everything running** — every Remote Control session on the machine,
+  including ones started from a terminal, with Claude's own titles. Bridges
+  (`claude remote-control`) are not listed.
 - **Stop and resume** — stop a session; continue any past conversation in a
   project (from its transcript) as a new Remote Control session.
 - **Remote hosts** — the same for projects on other machines, over ssh.
@@ -29,9 +29,8 @@ every time, so there is no second copy to drift:
 
 | What | Source |
 | --- | --- |
-| running sessions | the process table (`claude --remote-control …`, `claude remote-control …`) |
-| claude.ai link | the `script` log of sessions rcm started; `bridge-pointer.json` for bridges |
-| bridge conversations, status | `~/.claude/sessions/<pid>.json` |
+| running sessions | the process table (`claude --remote-control …`) |
+| claude.ai link | the `script` log of the session |
 | titles, history, resume | transcripts in `~/.claude/projects/<cwd>/*.jsonl` |
 
 The SQLite database holds sign-in state (passkeys, logins, invite codes) and the
