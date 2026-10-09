@@ -1,0 +1,6 @@
+# TLS-terminating reverse proxy in front of rcm (which listens on loopback).
+# Passkeys need HTTPS, and the hostname must match an entry in
+# auth.origins of ~/.config/rcm/config.json.
+claude.haenah.com {
+	reverse_proxy 127.0.0.1:8742
+}

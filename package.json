@@ -1,0 +1,16 @@
+{
+  "name": "rcm",
+  "version": "0.1.0",
+  "description": "Self-hosted manager for Claude Code Remote Control sessions, behind passkey sign-in",
+  "private": true,
+  "type": "module",
+  "workspaces": ["server", "web"],
+  "scripts": {
+    "dev": "bun run --filter '*' dev",
+    "build": "bun run --filter @rcm/web build",
+    "start": "bun run --filter @rcm/server start",
+    "cli": "bun server/src/cli.ts",
+    "typecheck": "bun run --filter '*' typecheck",
+    "test": "cd server && bun test"
+  }
+}

@@ -1,0 +1,22 @@
+# systemd user unit for rcm.
+#   cp deploy/rcm.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now rcm
+#   loginctl enable-linger $USER     # keep it (and sessions) running without a login
+#
+# Assumes the checkout lives at ~/Developer/haenah/claude-remote-control-manager —
+# adjust WorkingDirectory otherwise.
+
+[Unit]
+Description=rcm — Claude Code Remote Control session manager
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/Developer/haenah/claude-remote-control-manager
+ExecStart=%h/.bun/bin/bun server/src/index.ts
+# claude is usually in ~/.local/bin, which user services don't get by default.
+Environment=PATH=%h/.local/bin:%h/.bun/bin:/usr/local/bin:/usr/bin:/bin
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target
