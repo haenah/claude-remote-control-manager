@@ -148,7 +148,7 @@ function GeneralTab() {
 // ── Hosts ──────────────────────────────────────────────────────────────
 
 type HostForm = { editing: string | null; ssh: string; name: string; dirs: string };
-const emptyForm: HostForm = { editing: null, ssh: "", name: "", dirs: "/home/Developers" };
+const emptyForm: HostForm = { editing: null, ssh: "", name: "", dirs: "/home/Developer" };
 
 function HostsTab() {
   const hosts = useQuery({ queryKey: ["hosts"], queryFn: () => api<HostStatus[]>("/hosts") });

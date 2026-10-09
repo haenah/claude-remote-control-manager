@@ -57,7 +57,7 @@ export interface Config {
 }
 
 export const DEFAULT_PORT = 8742;
-export const DEFAULT_PROJECTS_DIR = "/home/Developers";
+export const DEFAULT_PROJECTS_DIR = "/home/Developer";
 
 export const CONFIG_PATH = process.env.RCM_CONFIG
   ? resolve(process.env.RCM_CONFIG)
@@ -146,7 +146,7 @@ function load(): Config {
   const raw = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as Partial<Config>;
   // Move the former default on existing installs as well as on first run.
   const legacy = raw.projectsDirs?.length === 1 &&
-    ["~/projects", expandHome("~/projects"), "/home/haenah/projects"].includes(raw.projectsDirs[0]!);
+    ["~/projects", expandHome("~/projects"), "/home/haenah/projects", "/home/Developers"].includes(raw.projectsDirs[0]!);
   if (legacy) raw.projectsDirs = [DEFAULT_PROJECTS_DIR];
   const cfg = normalize(raw);
   if (legacy) write(cfg);

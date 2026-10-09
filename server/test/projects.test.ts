@@ -103,7 +103,7 @@ test("remote shell scan matches local discovery and preserves unusual names", as
 
 test("existing default configs migrate and persist while custom roots remain", async () => {
   const module = join(import.meta.dir, "../src/config.ts");
-  for (const root of ["~/projects", "/home/haenah/projects", "/srv/custom"]) {
+  for (const root of ["~/projects", "/home/haenah/projects", "/home/Developers", "/srv/custom"]) {
     const path = join(dir, "config.json");
     await writeFile(path, JSON.stringify({ projectsDirs: [root], permissionMode: "plan" }));
     const proc = Bun.spawn([process.execPath, "-e", `const {config} = await import(${JSON.stringify(module)}); console.log(JSON.stringify(config.projectsDirs));`], {
