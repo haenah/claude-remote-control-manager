@@ -81,13 +81,13 @@ directories, permission mode and remote hosts are also editable in Settings.
 
 ```jsonc
 {
-  "projectsDirs": ["~/projects"],      // each subdirectory is a project
+  "projectsDirs": ["/home/Developers"], // recursively scan existing directories
   "host": "127.0.0.1",
   "port": 8742,
   "dataDir": "~/.config/rcm",          // sign-in db and session logs
   "permissionMode": "auto",            // default, auto, acceptEdits, dontAsk, plan, bypassPermissions
   "hosts": [
-    // { "name": "desktop", "ssh": "me@desktop", "projectsDirs": ["~/projects"] }
+    // { "name": "desktop", "ssh": "me@desktop", "projectsDirs": ["/home/Developers"] }
   ],
   "auth": {
     "rpName": "rc manager",
@@ -97,6 +97,16 @@ directories, permission mode and remote hosts are also editable in Settings.
   }
 }
 ```
+
+The default root is `/home/Developers`. Existing configs that still use the old
+`~/projects` or `/home/haenah/projects` default are migrated on startup; custom
+roots are kept. Local and remote scans discover nested directories, skip hidden
+folders, `node_modules` and `__pycache__`, and do not follow symlinks. Scans are
+cached for up to 15 seconds. The **folders** view shows the directory hierarchy;
+expanding a folder loads its file names. Use its arrow to view history and start
+options, or its lightning button to start a session directly. Search matches
+full paths and keeps parent folders visible. **recent** and **a–z** retain the
+flat list views.
 
 ### Remote hosts
 

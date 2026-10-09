@@ -4,6 +4,12 @@ export interface Project {
   host: string;
   path: string;
   mtime: number;
+  root: string;
+  relativePath: string;
+}
+
+export interface ProjectFile {
+  name: string;
 }
 
 export interface HostStatus {

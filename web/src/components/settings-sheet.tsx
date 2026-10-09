@@ -121,7 +121,7 @@ function GeneralTab() {
 
       <section className="space-y-2">
         <SectionTitle>project directories</SectionTitle>
-        <p className="text-muted-foreground px-1 text-xs">On this machine, one per line. Each subdirectory is a project.</p>
+        <p className="text-muted-foreground px-1 text-xs">On this machine, one root per line. Nested folders are discovered recursively; hidden and dependency folders are skipped.</p>
         <Textarea className="font-mono" rows={3} value={dirs} onChange={(e) => setDirs(e.target.value)} />
         <AnimatePresence>
           {dirsChanged && (
@@ -148,7 +148,7 @@ function GeneralTab() {
 // ── Hosts ──────────────────────────────────────────────────────────────
 
 type HostForm = { editing: string | null; ssh: string; name: string; dirs: string };
-const emptyForm: HostForm = { editing: null, ssh: "", name: "", dirs: "~/projects" };
+const emptyForm: HostForm = { editing: null, ssh: "", name: "", dirs: "/home/Developers" };
 
 function HostsTab() {
   const hosts = useQuery({ queryKey: ["hosts"], queryFn: () => api<HostStatus[]>("/hosts") });

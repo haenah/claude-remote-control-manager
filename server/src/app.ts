@@ -3,10 +3,10 @@ import { secureHeaders } from "hono/secure-headers";
 import { stat } from "node:fs/promises";
 import { hostname } from "node:os";
 import { join, resolve, sep } from "node:path";
-import { PERMISSION_MODES, config, hostError, updateConfig, type PermissionMode, type RemoteHost } from "./config";
+import { DEFAULT_PROJECTS_DIR, PERMISSION_MODES, config, hostError, updateConfig, type PermissionMode, type RemoteHost } from "./config";
 import { acceptClaudeTrust, checkOnline, findHost, runScript } from "./hosts";
 import { HttpError } from "./http";
-import { createProject, invalidateHostCache, listAllProjects, resolveProject } from "./projects";
+import { createProject, invalidateHostCache, listAllProjects, listProjectFiles, resolveProject } from "./projects";
 import * as sessions from "./sessions";
 import { readHistory, readLiveSessions, type LiveSession } from "./claude-state";
 import { allowedOrigin, auth, loadAuth, requireAuth, type AuthEnv } from "./auth/routes";
@@ -102,6 +102,8 @@ app.get("/api/overview", async (c) => {
 });
 
 // ── Projects ─────────────────────────────────────────────────────────────
+
+app.get("/api/projects/:key/files", async (c) => c.json(await listProjectFiles(c.req.param("key"))));
 
 app.post("/api/projects", async (c) => {
   const body = await c.req.json<{ name: string; host?: string }>();
@@ -207,7 +209,7 @@ function hostFromBody(body: Partial<RemoteHost>, fallbackName?: string): RemoteH
   if (!ssh) throw new HttpError(422, "ssh destination is required");
   // 'me@stardust' connects as that user but is labelled 'stardust'.
   const name = String(body.name ?? "").trim() || fallbackName || ssh.split("@").at(-1)!;
-  const dirs = (body.projectsDirs ?? ["~/projects"]).map((d) => String(d).trim()).filter(Boolean);
+  const dirs = (body.projectsDirs ?? [DEFAULT_PROJECTS_DIR]).map((d) => String(d).trim()).filter(Boolean);
   const host = { name, ssh, projectsDirs: dirs };
   const err = hostError(host);
   if (err) throw new HttpError(422, err);

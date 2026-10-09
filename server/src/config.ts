@@ -44,7 +44,7 @@ export interface AuthConfig {
 }
 
 export interface Config {
-  /** Local directories scanned for projects — each immediate subdirectory is one. */
+  /** Local roots scanned recursively for project directories. */
   projectsDirs: string[];
   /** Bind address. Loopback by default: a reverse proxy terminates TLS in front. */
   host: string;
@@ -57,6 +57,7 @@ export interface Config {
 }
 
 export const DEFAULT_PORT = 8742;
+export const DEFAULT_PROJECTS_DIR = "/home/Developers";
 
 export const CONFIG_PATH = process.env.RCM_CONFIG
   ? resolve(process.env.RCM_CONFIG)
@@ -64,7 +65,7 @@ export const CONFIG_PATH = process.env.RCM_CONFIG
 
 function defaults(): Config {
   return {
-    projectsDirs: ["~/projects"],
+    projectsDirs: [DEFAULT_PROJECTS_DIR],
     host: "127.0.0.1",
     port: DEFAULT_PORT,
     dataDir: "~/.config/rcm",
@@ -142,7 +143,14 @@ function load(): Config {
     console.info(`created config at ${CONFIG_PATH}`);
     return cfg;
   }
-  return normalize(JSON.parse(readFileSync(CONFIG_PATH, "utf8")));
+  const raw = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as Partial<Config>;
+  // Move the former default on existing installs as well as on first run.
+  const legacy = raw.projectsDirs?.length === 1 &&
+    ["~/projects", expandHome("~/projects"), "/home/haenah/projects"].includes(raw.projectsDirs[0]!);
+  if (legacy) raw.projectsDirs = [DEFAULT_PROJECTS_DIR];
+  const cfg = normalize(raw);
+  if (legacy) write(cfg);
+  return cfg;
 }
 
 function write(cfg: Config): void {

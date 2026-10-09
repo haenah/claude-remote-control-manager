@@ -13,11 +13,12 @@ import type { LiveSession, Project, StartResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { NewProjectDialog } from "./new-project-dialog";
 import { ProjectSheet } from "./project-sheet";
+import { ProjectTree } from "./project-tree";
 import { SessionRow } from "./session-row";
 import { SettingsSheet } from "./settings-sheet";
 import { Badge, Input, Logo, SectionTitle, Spinner, StatusDot } from "./ui";
 
-type Sort = "recent" | "alpha";
+type Sort = "tree" | "recent" | "alpha";
 
 /** Toast the outcome of a start, with an attach action when it worked. */
 export function announceStart(res: StartResult, label: string) {
@@ -37,7 +38,7 @@ export function Dashboard() {
   const overview = useOverview();
   const info = useInfo();
   const [yolo, setYolo] = useLocalStorage("rcm.yolo", false);
-  const [sort, setSort] = useLocalStorage<Sort>("rcm.sort", "recent");
+  const [sort, setSort] = useLocalStorage<Sort>("rcm.project-view", "tree");
   const [query, setQuery] = useState("");
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -53,7 +54,7 @@ export function Dashboard() {
 
   const projects = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const list = (data?.projects ?? []).filter((p) => !q || p.label.toLowerCase().includes(q) || p.host.toLowerCase().includes(q));
+    const list = (data?.projects ?? []).filter((p) => !q || p.path.toLowerCase().includes(q) || p.host.toLowerCase().includes(q));
     return list.sort((a, b) => {
       // Projects with live sessions float to the top either way.
       const live = Number(sessionsByProject.has(b.key)) - Number(sessionsByProject.has(a.key));
@@ -108,6 +109,9 @@ export function Dashboard() {
           </label>
           <Tabs value={sort} onValueChange={(v) => setSort(v as Sort)}>
             <TabsList>
+              <TabsTrigger value="tree" className="px-3">
+                folders
+              </TabsTrigger>
               <TabsTrigger value="recent" className="px-3">
                 recent
               </TabsTrigger>
@@ -159,13 +163,13 @@ export function Dashboard() {
           <SectionTitle
             right={
               <span className="text-muted-foreground font-mono text-xs">
-                <SlidingNumber number={projects.length} /> repos
+                <SlidingNumber number={projects.length} /> folders
               </span>
             }
           >
             projects
           </SectionTitle>
-          {(data?.projects.length ?? 0) > 6 && (
+          {(data?.projects.length ?? 0) > 0 && (
             <div className="relative">
               <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
               <Input placeholder="Filter projects" value={query} onChange={(e) => setQuery(e.target.value)} className="pl-9" />
@@ -180,6 +184,8 @@ export function Dashboard() {
             <p className="text-muted-foreground rounded-xl border border-dashed p-6 text-center text-sm">
               {query ? "No match." : "No projects yet — add a projects directory in settings, or create one."}
             </p>
+          ) : sort === "tree" ? (
+            <ProjectTree projects={data?.projects ?? []} query={query} sessions={sessionsByProject} yolo={yolo} onOpen={setOpenKey} onStarted={announceStart} />
           ) : (
             <motion.ul layout className="grid gap-2">
               <AnimatePresence initial={false}>
@@ -277,6 +283,7 @@ function ProjectCard({
             <span className="truncate font-mono text-[15px] font-medium">{project.label}</span>
             {project.host && <Badge tone="clay">{project.host}</Badge>}
           </p>
+          <p className="text-muted-foreground mt-0.5 truncate font-mono text-xs" title={project.path}>{project.path}</p>
           <p className="text-muted-foreground mt-0.5 text-xs">touched {ago(project.mtime)}</p>
         </div>
         {live > 0 && (

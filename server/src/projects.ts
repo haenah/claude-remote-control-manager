@@ -1,17 +1,17 @@
 /**
- * Project discovery — every immediate subdirectory of a projects dir is a
- * project. Local dirs are read directly; remote hosts get the same scan run
+ * Project discovery — directories under each configured root are scanned
+ * recursively. Local dirs are read directly; remote hosts get the same scan run
  * on the far end in a single ssh round trip.
  */
 
 import { mkdir, readdir, realpath, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { config, expandHome, type RemoteHost } from "./config";
 import { HostUnreachable, findHost, makeKey, runScript, shPath, shQuote, splitKey } from "./hosts";
 import { HttpError } from "./http";
 
 export interface Project {
-  /** 'myrepo' locally, 'stardust:myrepo' on a remote host. */
+  /** Relative directory path, prefixed by the host for remote projects. */
   key: string;
   /** Bare directory name, for display. */
   label: string;
@@ -21,6 +21,9 @@ export interface Project {
   path: string;
   /** Directory mtime in epoch seconds, for "recent" sorting. */
   mtime: number;
+  /** Configured scan root, for grouping the filesystem tree. */
+  root: string;
+  relativePath: string;
 }
 
 export interface HostStatus {
@@ -31,65 +34,78 @@ export interface HostStatus {
   error: string | null;
 }
 
-async function scanLocalDir(dir: string): Promise<Project[]> {
-  const root = expandHome(dir);
-  let entries;
-  try {
-    entries = await readdir(root, { withFileTypes: true });
-  } catch {
-    return [];
-  }
+// Keep dependency trees and hidden metadata out of recursive discovery.
+const SKIP_DIRS = new Set(["node_modules", "__pycache__"]);
+const visibleDir = (name: string) => !name.startsWith(".") && !SKIP_DIRS.has(name);
+
+function directoryKey(relativePath: string, rootIndex: number): string {
+  // Escape separators reserved for remote keys and multiple scan roots.
+  const name = relativePath.split("/").map(encodeURIComponent).join("/");
+  return rootIndex === 0 ? name : `@${rootIndex}/${name}`;
+}
+
+export async function scanLocalProjects(roots: string[]): Promise<Project[]> {
   const out: Project[] = [];
-  for (const e of entries) {
-    if (!e.isDirectory() || e.name.startsWith(".")) continue;
-    const path = join(root, e.name);
-    try {
-      out.push({
-        key: e.name,
-        label: e.name,
-        host: "",
-        path: await realpath(path),
-        mtime: (await stat(path)).mtimeMs / 1000,
-      });
-    } catch {
-      // Vanished between readdir and stat.
+  const seen = new Set<string>();
+  for (const [rootIndex, dir] of roots.entries()) {
+    const root = expandHome(dir);
+    async function walk(parent: string, prefix = ""): Promise<void> {
+      let entries;
+      try {
+        entries = await readdir(parent, { withFileTypes: true });
+      } catch {
+        return; // Missing roots or unreadable directories don't hide other projects.
+      }
+      entries.sort((a, b) => a.name.localeCompare(b.name));
+      for (const e of entries) {
+        if (!e.isDirectory() || !visibleDir(e.name)) continue;
+        const directory = join(parent, e.name);
+        const relativePath = prefix ? `${prefix}/${e.name}` : e.name;
+        try {
+          const path = await realpath(directory);
+          if (seen.has(path)) continue;
+          seen.add(path);
+          out.push({
+            key: directoryKey(relativePath, rootIndex), label: e.name, host: "", path,
+            mtime: (await stat(path)).mtimeMs / 1000, root: dir, relativePath,
+          });
+          await walk(directory, relativePath);
+        } catch {
+          // Vanished between readdir and stat.
+        }
+      }
     }
+    await walk(root);
   }
   return out;
 }
 
-export async function listLocalProjects(): Promise<Project[]> {
-  const seen = new Set<string>();
-  const out: Project[] = [];
-  for (const dir of config.projectsDirs) {
-    for (const p of await scanLocalDir(dir)) {
-      // Two roots holding the same name: the key can only point at one, so the
-      // earlier root wins.
-      if (seen.has(p.key)) continue;
-      seen.add(p.key);
-      out.push(p);
-    }
+let localScan: { roots: string; at: number; projects: Promise<Project[]> } | undefined;
+
+export function listLocalProjects(): Promise<Project[]> {
+  const roots = JSON.stringify(config.projectsDirs);
+  if (!localScan || localScan.roots !== roots || Date.now() - localScan.at >= SCAN_TTL_MS) {
+    localScan = { roots, at: Date.now(), projects: scanLocalProjects(config.projectsDirs) };
   }
-  return out;
+  return localScan.projects;
 }
 
 // ---------------------------------------------------------------------------
 // Remote hosts
 // ---------------------------------------------------------------------------
 
-// A plain string, not a template: the shell's ${d%/} must reach bash untouched.
-const REMOTE_SCAN = [
-  "scan() (",
-  '  cd "$1" 2>/dev/null || return 0',
-  "  for d in */; do",
-  "    d=${d%/}",
-  '    case "$d" in .*) continue;; esac',
-  '    [ -d "$d" ] || continue',
-  `    printf '%s\\t%s\\t%s\\n' "$d" "$(cd "$d" && pwd -P)" "$(stat -c %Y "$d" 2>/dev/null || echo 0)"`,
-  "  done",
-  ")",
-  "",
-].join("\n");
+// NUL framing preserves spaces, tabs and newlines in directory names.
+export const REMOTE_SCAN = `scan() (
+  cd "$1" 2>/dev/null || return 0
+  find . -mindepth 1 -type d \\( -name '.*' -o -name node_modules -o -name __pycache__ \\) -prune -o -type d -print0 2>/dev/null |
+  while IFS= read -r -d '' d; do
+    relative=\${d#./}
+    physical=$(cd "$d" && pwd -P) || continue
+    mtime=$(stat -c %Y "$d" 2>/dev/null || stat -f %m "$d" 2>/dev/null || echo 0)
+    printf '%s\\0%s\\0%s\\0%s\\0' "$relative" "$physical" "$mtime" "$2"
+  done
+)
+`;
 
 /**
  * Remote scans are re-run at most this often. The UI refreshes the project
@@ -104,7 +120,7 @@ const scanCache = new Map<string, { at: number; projects: Project[] }>();
 const inflight = new Map<string, Promise<Project[]>>();
 
 async function scanHost(host: RemoteHost): Promise<Project[]> {
-  const script = REMOTE_SCAN + host.projectsDirs.map((d) => `scan ${shPath(d)}\n`).join("");
+  const script = REMOTE_SCAN + host.projectsDirs.map((d, i) => `scan ${shPath(d)} ${i}\n`).join("");
   const res = await runScript(host, script, 25_000);
   if (res.code !== 0) {
     throw new HostUnreachable(
@@ -113,11 +129,19 @@ async function scanHost(host: RemoteHost): Promise<Project[]> {
   }
   const seen = new Set<string>();
   const out: Project[] = [];
-  for (const line of res.stdout.split("\n")) {
-    const [label, path, mtime] = line.split("\t");
-    if (!label || !path || seen.has(label)) continue;
-    seen.add(label);
-    out.push({ key: makeKey(host.name, label), label, host: host.name, path, mtime: Number(mtime) || 0 });
+  const fields = res.stdout.split("\0");
+  for (let i = 0; i + 3 < fields.length; i += 4) {
+    const relativePath = fields[i]!;
+    const path = fields[i + 1]!;
+    const rootIndex = Number(fields[i + 3]);
+    if (!relativePath || !path || seen.has(path)) continue;
+    seen.add(path);
+    out.push({
+      key: makeKey(host.name, directoryKey(relativePath, rootIndex)),
+      label: basename(relativePath), host: host.name, path,
+      mtime: Number(fields[i + 2]) || 0,
+      root: host.projectsDirs[rootIndex]!, relativePath,
+    });
   }
   scanCache.set(host.name, { at: Date.now(), projects: out });
   return out;
@@ -136,6 +160,7 @@ export function listHostProjects(host: RemoteHost, useCache = true): Promise<Pro
 }
 
 export function invalidateHostCache(name?: string): void {
+  if (!name) localScan = undefined;
   if (name) scanCache.delete(name);
   else scanCache.clear();
 }
@@ -185,16 +210,43 @@ export async function resolveProject(key: string): Promise<{ host: RemoteHost | 
   } catch (e) {
     throw new HttpError(502, `Host '${host.name}' is unreachable: ${(e as Error).message}`);
   }
-  const p = projects.find((x) => x.label === name);
+  const p = projects.find((x) => x.key === key);
   if (!p) throw new HttpError(404, `Project '${key}' not found on ${host.name}`);
   return { host, path: p.path, label: p.label };
+}
+
+export interface ProjectFile {
+  name: string;
+}
+
+/** Read file names only, when a directory is expanded in the tree. */
+export async function listProjectFiles(key: string): Promise<ProjectFile[]> {
+  const { host, path } = await resolveProject(key);
+  let names: string[];
+  if (host) {
+    const res = await runScript(host, `cd ${shQuote(path)} || exit 1
+shopt -s nullglob dotglob
+for f in *; do
+  if [ -f "$f" ] && [ ! -L "$f" ]; then printf '%s\\0' "$f"; fi
+done
+`).catch((e) => { throw new HttpError(502, (e as Error).message); });
+    if (res.code !== 0) throw new HttpError(502, `Could not read files on ${host.name}`);
+    names = res.stdout.split("\0").filter(Boolean);
+  } else {
+    try {
+      names = (await readdir(path, { withFileTypes: true })).filter((e) => e.isFile()).map((e) => e.name);
+    } catch {
+      throw new HttpError(404, "Directory is no longer readable");
+    }
+  }
+  return names.sort((a, b) => a.localeCompare(b)).map((name) => ({ name }));
 }
 
 const PROJECT_NAME = /^[A-Za-z0-9_.-]+$/;
 
 /** Create an empty project directory in the first projects dir of *host*. */
 export async function createProject(name: string, host: RemoteHost | null): Promise<Project> {
-  if (!PROJECT_NAME.test(name) || name.startsWith(".")) throw new HttpError(422, "Invalid project name");
+  if (!PROJECT_NAME.test(name) || !visibleDir(name)) throw new HttpError(422, "Invalid project name");
   const base = host ? host.projectsDirs[0]! : config.projectsDirs[0]!;
   if (host) {
     const target = `${shPath(base)}/${shQuote(name)}`;
@@ -214,7 +266,7 @@ printf 'RCM_OK %s\\n' "$(cd ${target} && pwd)"
       throw new HttpError(500, `Could not create '${name}' on ${host.name}: ${res.stderr.trim() || "unknown error"}`);
     }
     invalidateHostCache(host.name);
-    return { key: makeKey(host.name, name), label: name, host: host.name, path: out.slice(7), mtime: Date.now() / 1000 };
+    return { key: makeKey(host.name, directoryKey(name, 0)), label: name, host: host.name, path: out.slice(7), mtime: Date.now() / 1000, root: base, relativePath: name };
   }
   const root = expandHome(base);
   await mkdir(root, { recursive: true });
@@ -224,5 +276,6 @@ printf 'RCM_OK %s\\n' "$(cd ${target} && pwd)"
   } catch {
     throw new HttpError(409, `Project '${name}' already exists`);
   }
-  return { key: name, label: name, host: "", path: await realpath(path), mtime: Date.now() / 1000 };
+  localScan = undefined;
+  return { key: name, label: name, host: "", path: await realpath(path), mtime: Date.now() / 1000, root: base, relativePath: name };
 }
