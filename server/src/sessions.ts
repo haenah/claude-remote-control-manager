@@ -78,6 +78,10 @@ function claudeCommand(o: StartOptions, conversationId: string): string {
   let cmd = `claude --remote-control=${shQuote(o.name)}`;
   cmd += o.resume ? ` --resume ${conversationId}` : ` --session-id ${conversationId}`;
   if (o.permissionMode !== "default") cmd += ` --permission-mode ${o.permissionMode}`;
+  // Bypass mode otherwise opens with an accept dialog nobody is there to answer.
+  if (o.permissionMode === "bypassPermissions") {
+    cmd += ` --settings ${shQuote(JSON.stringify({ skipDangerousModePermissionPrompt: true }))}`;
+  }
   return cmd;
 }
 
