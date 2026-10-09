@@ -34,7 +34,8 @@ every time, so there is no second copy to drift:
 | bridge conversations, status | `~/.claude/sessions/<pid>.json` |
 | titles, history, resume | transcripts in `~/.claude/projects/<cwd>/*.jsonl` |
 
-The SQLite database holds only sign-in state: passkeys, logins, invite codes.
+The SQLite database holds sign-in state (passkeys, logins, invite codes) and the
+last successful session start per directory for the **recent** list.
 
 ## Setup (Raspberry Pi)
 
@@ -106,8 +107,11 @@ folders, `node_modules` and `__pycache__`, and do not follow symlinks. Scans are
 cached for up to 15 seconds. The **folders** view shows the directory hierarchy;
 expanding a folder loads its file names. Use its arrow to view history and start
 options, or its lightning button to start a session directly. Search matches
-full paths and keeps parent folders visible. **recent** and **a–z** retain the
-flat list views.
+full paths and keeps parent folders visible. **recent** lists only directories
+where a session was successfully started or resumed, newest first, with one
+entry per directory. Browsing folders never adds a recent entry. Recent starts
+are stored on the server so they survive restarts and appear on every device;
+currently running sessions are also included.
 
 ### Remote hosts
 

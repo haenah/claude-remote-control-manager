@@ -12,6 +12,10 @@ export interface ProjectFile {
   name: string;
 }
 
+export interface RecentProject extends Project {
+  lastStartedAt: string;
+}
+
 export interface HostStatus {
   name: string;
   ssh: string;
@@ -53,6 +57,7 @@ export interface LiveSession {
 
 export interface Overview {
   projects: Project[];
+  recentProjects: RecentProject[];
   hosts: HostStatus[];
   sessions: LiveSession[];
   permissionMode: string;

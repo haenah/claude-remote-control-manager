@@ -1,6 +1,6 @@
 /**
- * SQLite — sign-in state only. Sessions are deliberately not stored: claude
- * keeps that itself (see claude-state.ts), and a copy here could only drift.
+ * SQLite — sign-in state and the last successful session start per directory.
+ * Session details are read directly from Claude (see claude-state.ts).
  */
 
 import { Database } from "bun:sqlite";
@@ -56,6 +56,13 @@ CREATE TABLE IF NOT EXISTS enroll_tokens (
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS recent_projects (
+  host            TEXT NOT NULL,
+  path            TEXT NOT NULL,
+  last_started_at TEXT NOT NULL,
+  PRIMARY KEY (host, path)
 );
 `);
 

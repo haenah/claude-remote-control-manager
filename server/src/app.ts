@@ -8,6 +8,7 @@ import { acceptClaudeTrust, checkOnline, findHost, runScript } from "./hosts";
 import { HttpError } from "./http";
 import { createProject, invalidateHostCache, listAllProjects, listProjectFiles, resolveProject } from "./projects";
 import * as sessions from "./sessions";
+import { listRecentProjects } from "./recent-projects";
 import { readHistory, readLiveSessions, type LiveSession } from "./claude-state";
 import { allowedOrigin, auth, loadAuth, requireAuth, type AuthEnv } from "./auth/routes";
 
@@ -98,7 +99,7 @@ app.get("/api/overview", async (c) => {
   const sessions = [...local, ...remote.flat()]
     .map((s) => ({ ...s, project: byPath.get(`${s.host}\0${s.cwd}`) ?? null }))
     .sort((a, b) => (b.startedAt ?? "").localeCompare(a.startedAt ?? ""));
-  return c.json({ projects, hosts, sessions, permissionMode: config.permissionMode });
+  return c.json({ projects, recentProjects: listRecentProjects(projects, sessions), hosts, sessions, permissionMode: config.permissionMode });
 });
 
 // ── Projects ─────────────────────────────────────────────────────────────

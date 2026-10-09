@@ -72,11 +72,16 @@ test("file API requires sign-in and accepts encoded nested project keys", async 
   const token = createAuthSession("pk-projects", "test");
   const project = (await listLocalProjects()).find((p) => p.label === "a:b %")!;
   const url = `/api/projects/${encodeURIComponent(project.key)}/files`;
+  const { listRecentProjects } = await import("../src/recent-projects");
   try {
+    expect(listRecentProjects(await listLocalProjects())).toEqual([]);
     expect((await app.request(url)).status).toBe(401);
     const res = await app.request(url, { headers: { Cookie: `${SESSION_COOKIE}=${token}` } });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual([{ name: "README.md" }]);
+    // Reopening a folder stays read-only and never adds a recent-session entry.
+    expect((await app.request(url, { headers: { Cookie: `${SESSION_COOKIE}=${token}` } })).status).toBe(200);
+    expect(listRecentProjects(await listLocalProjects())).toEqual([]);
   } finally {
     destroyAuthSession(token);
     db.query("DELETE FROM passkeys WHERE id = 'pk-projects'").run();

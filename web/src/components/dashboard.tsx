@@ -9,7 +9,7 @@ import { SlidingNumber } from "@/components/animate-ui/primitives/texts/sliding-
 import { sessionKey, useInfo, useOverview, useStartSession } from "@/hooks/queries";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { ago } from "@/lib/format";
-import type { LiveSession, Project, StartResult } from "@/lib/types";
+import type { LiveSession, Project, RecentProject, StartResult } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { NewProjectDialog } from "./new-project-dialog";
 import { ProjectSheet } from "./project-sheet";
@@ -18,7 +18,7 @@ import { SessionRow } from "./session-row";
 import { SettingsSheet } from "./settings-sheet";
 import { Badge, Input, Logo, SectionTitle, Spinner, StatusDot } from "./ui";
 
-type Sort = "tree" | "recent" | "alpha";
+type View = "tree" | "recent";
 
 /** Toast the outcome of a start, with an attach action when it worked. */
 export function announceStart(res: StartResult, label: string) {
@@ -38,7 +38,9 @@ export function Dashboard() {
   const overview = useOverview();
   const info = useInfo();
   const [yolo, setYolo] = useLocalStorage("rcm.yolo", false);
-  const [sort, setSort] = useLocalStorage<Sort>("rcm.project-view", "tree");
+  const [savedView, setView] = useLocalStorage<View>("rcm.project-view", "tree");
+  // Older clients may have saved the removed alphabetical view.
+  const view = savedView === "recent" ? "recent" : "tree";
   const [query, setQuery] = useState("");
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -52,16 +54,12 @@ export function Dashboard() {
   }, [data?.sessions]);
   const labels = useMemo(() => new Map((data?.projects ?? []).map((p) => [p.key, p])), [data?.projects]);
 
-  const projects = useMemo(() => {
+  const [folders, recentProjects] = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const list = (data?.projects ?? []).filter((p) => !q || p.path.toLowerCase().includes(q) || p.host.toLowerCase().includes(q));
-    return list.sort((a, b) => {
-      // Projects with live sessions float to the top either way.
-      const live = Number(sessionsByProject.has(b.key)) - Number(sessionsByProject.has(a.key));
-      if (live) return live;
-      return sort === "alpha" ? a.label.localeCompare(b.label) : b.mtime - a.mtime;
-    });
-  }, [data?.projects, query, sort, sessionsByProject]);
+    const matches = (p: Project) => !q || p.path.toLowerCase().includes(q) || p.host.toLowerCase().includes(q);
+    return [(data?.projects ?? []).filter(matches), (data?.recentProjects ?? []).filter(matches)] as const;
+  }, [data?.projects, data?.recentProjects, query]);
+  const projects = view === "recent" ? recentProjects : folders;
 
   const openProject = openKey ? (labels.get(openKey) ?? null) : null;
   // Sessions outside the listed projects (started from a terminal anywhere) still show, by folder.
@@ -107,16 +105,13 @@ export function Dashboard() {
             YOLO
             <Switch checked={yolo} onCheckedChange={setYolo} className="data-[state=checked]:bg-destructive" />
           </label>
-          <Tabs value={sort} onValueChange={(v) => setSort(v as Sort)}>
+          <Tabs value={view} onValueChange={(v) => setView(v as View)}>
             <TabsList>
               <TabsTrigger value="tree" className="px-3">
                 folders
               </TabsTrigger>
               <TabsTrigger value="recent" className="px-3">
                 recent
-              </TabsTrigger>
-              <TabsTrigger value="alpha" className="px-3">
-                a–z
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -167,7 +162,7 @@ export function Dashboard() {
               </span>
             }
           >
-            projects
+            {view === "recent" ? "recent sessions" : "folders"}
           </SectionTitle>
           {(data?.projects.length ?? 0) > 0 && (
             <div className="relative">
@@ -182,14 +177,14 @@ export function Dashboard() {
             <p className="text-destructive rounded-xl border p-4 text-sm">{overview.error.message}</p>
           ) : projects.length === 0 ? (
             <p className="text-muted-foreground rounded-xl border border-dashed p-6 text-center text-sm">
-              {query ? "No match." : "No projects yet — add a projects directory in settings, or create one."}
+              {query ? "No match." : view === "recent" ? "No recent sessions yet — start a session from folders." : "No folders found — add a project directory in settings, or create one."}
             </p>
-          ) : sort === "tree" ? (
+          ) : view === "tree" ? (
             <ProjectTree projects={data?.projects ?? []} query={query} sessions={sessionsByProject} yolo={yolo} onOpen={setOpenKey} onStarted={announceStart} />
           ) : (
             <motion.ul layout className="grid gap-2">
               <AnimatePresence initial={false}>
-                {projects.map((p, i) => (
+                {recentProjects.map((p, i) => (
                   <ProjectCard
                     key={p.key}
                     project={p}
@@ -257,7 +252,7 @@ function ProjectCard({
   yolo,
   onOpen,
 }: {
-  project: Project;
+  project: RecentProject;
   index: number;
   live: number;
   yolo: boolean;
@@ -284,7 +279,7 @@ function ProjectCard({
             {project.host && <Badge tone="clay">{project.host}</Badge>}
           </p>
           <p className="text-muted-foreground mt-0.5 truncate font-mono text-xs" title={project.path}>{project.path}</p>
-          <p className="text-muted-foreground mt-0.5 text-xs">touched {ago(project.mtime)}</p>
+          <p className="text-muted-foreground mt-0.5 text-xs">session opened {ago(project.lastStartedAt)}</p>
         </div>
         {live > 0 && (
           <Badge tone="success" className="shrink-0">

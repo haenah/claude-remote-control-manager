@@ -22,6 +22,7 @@ import { sessionLogDir, type PermissionMode, type RemoteHost } from "./config";
 import { localEnv, runScript, shQuote } from "./hosts";
 import { HttpError } from "./http";
 import { BRIDGE_ARGS, processTable, terminate } from "./proc";
+import { rememberSessionStart } from "./recent-projects";
 
 const SESSION_URL = /https:\/\/claude\.ai\/code\/session_[A-Za-z0-9_-]+/g;
 // OSC first: its introducer `ESC ]` would otherwise match the two-byte branch.
@@ -117,6 +118,13 @@ async function pollForUrl(logPath: string, exited: () => boolean): Promise<{ url
 }
 
 export async function startSession(o: StartOptions): Promise<StartResult> {
+  const startedAt = new Date().toISOString();
+  const result = await launchSession(o);
+  rememberSessionStart(o.host?.name ?? "", o.projectPath, startedAt, result);
+  return result;
+}
+
+async function launchSession(o: StartOptions): Promise<StartResult> {
   const conversationId = o.resume ?? randomUUID();
   if (o.host) return startRemote(o, o.host, conversationId);
 
