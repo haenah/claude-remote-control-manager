@@ -152,7 +152,14 @@
 }
 
 /* iOS home-screen app: keep clear of the notch and home indicator. */
-.safe-top { padding-top: max(env(safe-area-inset-top), 0.75rem); }
+:root { --safe-top: env(safe-area-inset-top); }
+/* iOS 26 blurs just past the status bar in installed apps; start below it. */
+@supports (-webkit-touch-callout: none) {
+  @media (display-mode: standalone) {
+    :root { --safe-top: calc(env(safe-area-inset-top) + 1.5rem); }
+  }
+}
+.safe-top { padding-top: max(var(--safe-top), 0.75rem); }
 .safe-bottom { padding-bottom: max(env(safe-area-inset-bottom), 1rem); }
 
 /* Soft glow behind the page, so the dark canvas isn't flat. */
