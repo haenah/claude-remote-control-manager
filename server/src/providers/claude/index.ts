@@ -4,6 +4,7 @@ import { acceptClaudeTrust } from "./trust";
 import { HttpError } from "../../http";
 import { providerStatus } from "../status";
 import { pruneSessionLogs } from "./logs";
+import { PERMISSION_MODES } from "../../config";
 import { launchSession, stopSession } from "./launcher";
 import {
   readHistory,
@@ -13,6 +14,14 @@ import {
 
 const access = (url: string | null): SessionAccess | null =>
   url ? { kind: "url", url, label: "Claude" } : null;
+const descriptions: Record<string, string> = {
+  default: "Ask before edits and commands",
+  auto: "Claude decides, with safety checks for risky actions",
+  acceptEdits: "Accept file edits automatically, ask for commands",
+  dontAsk: "Deny actions that would require an approval prompt",
+  plan: "Plan without making changes",
+  bypassPermissions: "Skip Claude permission checks",
+};
 export function claudeLiveSession(s: ClaudeSession): LiveSession {
   return {
     id: String(s.pid),
@@ -50,6 +59,18 @@ export const claudeProvider: SessionProvider = {
     stopLabel: "Stop",
     stopDescription:
       "The session disconnects. Its transcript stays, so it can be resumed later.",
+    permissionFields: [
+      {
+        key: "mode",
+        label: "Permission mode",
+        defaultValue: "auto",
+        options: PERMISSION_MODES.map((value) => ({
+          value,
+          label: value,
+          description: descriptions[value]!,
+        })),
+      },
+    ],
   },
   status(host) {
     return providerStatus(this.definition, host, "claude --version\n");

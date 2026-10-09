@@ -15,7 +15,8 @@ const context: LaunchContext = {
   host: null,
   projectPath: "/fixture/service/repo",
   name: "test",
-  permissionMode: "auto",
+  permissions: {},
+  yolo: false,
 };
 const project: Project = {
   key: "repo",
@@ -38,6 +39,7 @@ function adapter(id: ProviderId, calls: string[]): SessionProvider {
     label: id,
     icon: id === "claude" ? ("anthropic" as const) : ("chatgpt" as const),
     connectionLabel: id,
+    permissionFields: [],
     supportsPairing: true,
     stopLabel: "stop",
     stopDescription: "fixture",

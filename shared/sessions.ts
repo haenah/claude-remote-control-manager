@@ -1,5 +1,18 @@
 /** Serializable session contract shared by the API and web UI. */
 export type ProviderId = "claude" | "codex";
+export type PermissionValues = Record<string, string>;
+export interface PermissionField {
+  key: string;
+  label: string;
+  defaultValue: string;
+  options: { value: string; label: string; description: string }[];
+}
+export interface ProviderPermissionSettings {
+  provider: ProviderId;
+  label: string;
+  fields: PermissionField[];
+  values: PermissionValues;
+}
 
 export interface ProviderDefinition {
   id: ProviderId;
@@ -9,6 +22,7 @@ export interface ProviderDefinition {
   supportsPairing: boolean;
   stopLabel: string;
   stopDescription: string;
+  permissionFields: PermissionField[];
 }
 
 export interface ProviderStatus extends ProviderDefinition {

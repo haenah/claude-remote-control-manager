@@ -16,7 +16,8 @@ const ctx: LaunchContext = {
   host: null,
   projectPath: "/fixture/repo",
   name: "My work",
-  permissionMode: "auto",
+  permissions: { sandbox: "workspace-write", approvalPolicy: "on-request" },
+  yolo: false,
 };
 const thread: CodexThread = {
   id,
@@ -260,12 +261,14 @@ test("pairing expiry is normalized and permission mappings keep YOLO explicit", 
     manualPairingCode: "PAIR-FIXTURE",
     expiresAt: 1791500300,
   });
-  expect(codexPermissions("bypassPermissions")).toEqual({
+  expect(codexPermissions({}, true)).toEqual({
     approvalPolicy: "never",
     sandbox: "danger-full-access",
   });
-  expect(codexPermissions("plan").sandbox).toBe("read-only");
-  expect(codexPermissions("default")).toEqual({});
+  expect(codexPermissions({ sandbox: "read-only" }).sandbox).toBe("read-only");
+  expect(
+    codexPermissions({ sandbox: "default", approvalPolicy: "default" }),
+  ).toEqual({});
 });
 
 test("archived Codex conversations remain in history and are restored before resume", async () => {

@@ -6,9 +6,16 @@
  * the live `config` object immediately — no restart.
  */
 
-import { mkdirSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  existsSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import type { PermissionValues } from "../../shared/sessions";
 
 export const PERMISSION_MODES = [
   "default",
@@ -52,6 +59,8 @@ export interface Config {
   /** Holds the SQLite db and session logs. */
   dataDir: string;
   permissionMode: PermissionMode;
+  /** Native settings keyed by provider; permissionMode is retained for older installs. */
+  providerPermissions: Record<string, PermissionValues>;
   hosts: RemoteHost[];
   auth: AuthConfig;
 }
@@ -70,6 +79,7 @@ function defaults(): Config {
     port: DEFAULT_PORT,
     dataDir: "~/.config/rcm",
     permissionMode: "auto",
+    providerPermissions: { claude: { mode: "auto" } },
     hosts: [],
     auth: {
       rpName: "rc manager",
@@ -95,7 +105,8 @@ export function hostError(h: RemoteHost): string | null {
   // ':' separates host from project in a key, and '/' would break the URL
   // path segment that keys travel in.
   if (/[:/]/.test(h.name)) return "host name may not contain ':' or '/'";
-  if (!h.projectsDirs.length) return "at least one projects directory is required";
+  if (!h.projectsDirs.length)
+    return "at least one projects directory is required";
   return null;
 }
 
@@ -104,15 +115,30 @@ function normalize(raw: Partial<Config>): Config {
   const mode = PERMISSION_MODES.includes(raw.permissionMode as PermissionMode)
     ? (raw.permissionMode as PermissionMode)
     : d.permissionMode;
+  // Split older shared settings using the previous implementation's effective
+  // Codex policy. This preserves restrictions without treating the modes as equivalent.
+  const legacyCodex: PermissionValues =
+    mode === "plan"
+      ? { sandbox: "read-only", approvalPolicy: "on-request" }
+      : mode === "dontAsk"
+        ? { sandbox: "workspace-write", approvalPolicy: "never" }
+        : mode === "bypassPermissions"
+          ? { sandbox: "danger-full-access", approvalPolicy: "never" }
+          : mode === "default"
+            ? { sandbox: "default", approvalPolicy: "default" }
+            : { sandbox: "workspace-write", approvalPolicy: "on-request" };
   const seen = new Set<string>();
   const hosts: RemoteHost[] = [];
   for (const h of raw.hosts ?? []) {
     const host = {
       name: String(h?.name ?? "").trim(),
       ssh: String(h?.ssh ?? "").trim(),
-      projectsDirs: (h?.projectsDirs ?? []).map((x) => String(x).trim()).filter(Boolean),
+      projectsDirs: (h?.projectsDirs ?? [])
+        .map((x) => String(x).trim())
+        .filter(Boolean),
     };
-    const err = hostError(host) ?? (seen.has(host.name) ? "duplicate host name" : null);
+    const err =
+      hostError(host) ?? (seen.has(host.name) ? "duplicate host name" : null);
     if (err) {
       // A typo in one host must not take the app down for every other project.
       console.warn(`config: ignoring host ${JSON.stringify(h)}: ${err}`);
@@ -122,11 +148,18 @@ function normalize(raw: Partial<Config>): Config {
     hosts.push(host);
   }
   return {
-    projectsDirs: raw.projectsDirs?.length ? raw.projectsDirs.map(String) : d.projectsDirs,
+    projectsDirs: raw.projectsDirs?.length
+      ? raw.projectsDirs.map(String)
+      : d.projectsDirs,
     host: raw.host ?? d.host,
     port: Number(raw.port ?? d.port),
     dataDir: raw.dataDir ?? d.dataDir,
     permissionMode: mode,
+    providerPermissions: {
+      ...(!raw.providerPermissions ? { codex: legacyCodex } : {}),
+      ...raw.providerPermissions,
+      claude: { mode, ...raw.providerPermissions?.claude },
+    },
     hosts,
     auth: {
       rpName: raw.auth?.rpName ?? d.auth.rpName,
@@ -145,11 +178,18 @@ function load(): Config {
   }
   const raw = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as Partial<Config>;
   // Move the former default on existing installs as well as on first run.
-  const legacy = raw.projectsDirs?.length === 1 &&
-    ["~/projects", expandHome("~/projects"), "/home/haenah/projects", "/home/Developers", "/home/Developer"].includes(raw.projectsDirs[0]!);
+  const legacy =
+    raw.projectsDirs?.length === 1 &&
+    [
+      "~/projects",
+      expandHome("~/projects"),
+      "/home/haenah/projects",
+      "/home/Developers",
+      "/home/Developer",
+    ].includes(raw.projectsDirs[0]!);
   if (legacy) raw.projectsDirs = [DEFAULT_PROJECTS_DIR];
   const cfg = normalize(raw);
-  if (legacy) write(cfg);
+  if (legacy || !raw.providerPermissions) write(cfg);
   return cfg;
 }
 

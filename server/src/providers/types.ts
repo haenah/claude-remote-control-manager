@@ -1,4 +1,4 @@
-import type { PermissionMode, RemoteHost } from "../config";
+import type { RemoteHost } from "../config";
 import type {
   LiveSession,
   PairingResult,
@@ -6,13 +6,15 @@ import type {
   ProviderDefinition,
   ProviderStatus,
   StartResult,
+  PermissionValues,
 } from "../../../shared/sessions";
 
 export interface LaunchContext {
   host: RemoteHost | null;
   projectPath: string;
   name: string;
-  permissionMode: PermissionMode;
+  permissions: PermissionValues;
+  yolo: boolean;
   resume?: string;
   resumeArchived?: boolean;
 }

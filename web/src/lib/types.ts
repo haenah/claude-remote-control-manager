@@ -24,15 +24,29 @@ export interface HostStatus {
   error: string | null;
 }
 
-export type { ChildSession, LiveSession, PastConversation, StartResult, SessionAccess, ProviderId, ProviderDefinition, ProviderStatus, PairingResult } from "../../../shared/sessions";
-import type { LiveSession } from "../../../shared/sessions";
+export type {
+  ChildSession,
+  LiveSession,
+  PastConversation,
+  StartResult,
+  SessionAccess,
+  ProviderId,
+  ProviderDefinition,
+  ProviderStatus,
+  PairingResult,
+  PermissionValues,
+  ProviderPermissionSettings,
+} from "../../../shared/sessions";
+import type {
+  LiveSession,
+  ProviderPermissionSettings,
+} from "../../../shared/sessions";
 
 export interface Overview {
   projects: Project[];
   recentProjects: RecentProject[];
   hosts: HostStatus[];
   sessions: LiveSession[];
-  permissionMode: string;
 }
 
 export interface Info {
@@ -42,8 +56,7 @@ export interface Info {
 
 export interface Settings {
   projectsDirs: string[];
-  permissionMode: string;
-  permissionModes: string[];
+  providerPermissions: ProviderPermissionSettings[];
 }
 
 export interface Passkey {

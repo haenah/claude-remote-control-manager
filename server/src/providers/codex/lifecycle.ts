@@ -40,15 +40,19 @@ export interface CodexThread {
 
 const epoch = (seconds: number) => new Date(seconds * 1000).toISOString();
 
-export function codexPermissions(mode: LaunchContext["permissionMode"]) {
-  if (mode === "bypassPermissions")
-    return { approvalPolicy: "never", sandbox: "danger-full-access" };
-  if (mode === "plan")
-    return { approvalPolicy: "on-request", sandbox: "read-only" };
-  if (mode === "dontAsk")
-    return { approvalPolicy: "never", sandbox: "workspace-write" };
-  if (mode === "default") return {};
-  return { approvalPolicy: "on-request", sandbox: "workspace-write" };
+export function codexPermissions(
+  permissions: LaunchContext["permissions"],
+  yolo = false,
+) {
+  if (yolo) return { approvalPolicy: "never", sandbox: "danger-full-access" };
+  return {
+    ...(permissions.sandbox && permissions.sandbox !== "default"
+      ? { sandbox: permissions.sandbox }
+      : {}),
+    ...(permissions.approvalPolicy && permissions.approvalPolicy !== "default"
+      ? { approvalPolicy: permissions.approvalPolicy }
+      : {}),
+  };
 }
 
 export function codexLiveSession(
@@ -165,7 +169,7 @@ export function createCodexLifecycle(
       const remote = await readyRemote(rpc);
       const params = {
         cwd: o.projectPath,
-        ...codexPermissions(o.permissionMode),
+        ...codexPermissions(o.permissions, o.yolo),
       };
       let response: { thread: CodexThread };
       if (o.resume) {

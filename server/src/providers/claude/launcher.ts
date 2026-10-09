@@ -80,8 +80,8 @@ function claudeCommand(o: StartOptions, conversationId: string): string {
   cmd += o.resume
     ? ` --resume ${conversationId}`
     : ` --session-id ${conversationId}`;
-  if (o.permissionMode !== "default")
-    cmd += ` --permission-mode ${o.permissionMode}`;
+  const mode = o.yolo ? "bypassPermissions" : o.permissions.mode;
+  if (mode && mode !== "default") cmd += ` --permission-mode ${shQuote(mode)}`;
   return cmd;
 }
 

@@ -24,7 +24,8 @@ on the public internet.
   remain in project history and can be resumed. Stopping a conversation never
   stops the shared Codex daemon or another conversation.
 - **Remote hosts** — the same for projects on other machines, over ssh.
-- **YOLO / permission mode** — per-start `bypassPermissions`, or a default mode.
+- **Native permissions** — separate Claude permission modes and Codex sandbox /
+  approval policies. YOLO overrides the selected engine’s settings for one launch.
 - **Passkeys** — sign-in is one Face ID / Touch ID prompt. No passwords.
 
 ### Where the data comes from
@@ -86,7 +87,7 @@ bun run cli reset-passkeys   # forget all passkeys and logins; prints a setup co
 ## Configuration
 
 `~/.config/rcm/config.json` (or `$RCM_CONFIG`), created on first run. Project
-directories, permission mode and remote hosts are also editable in Settings.
+directories, provider permissions and remote hosts are also editable in Settings.
 
 ```jsonc
 {
@@ -94,7 +95,10 @@ directories, permission mode and remote hosts are also editable in Settings.
   "host": "127.0.0.1",
   "port": 8742,
   "dataDir": "~/.config/rcm",          // sign-in db and session logs
-  "permissionMode": "auto",            // default, auto, acceptEdits, dontAsk, plan, bypassPermissions
+  "providerPermissions": {
+    "claude": { "mode": "auto" },
+    "codex": { "sandbox": "workspace-write", "approvalPolicy": "on-request" }
+  },
   "hosts": [
     // { "name": "desktop", "ssh": "me@desktop", "projectsDirs": ["~/Developer"] }
   ],
@@ -232,3 +236,22 @@ manager enables Remote through JSON-RPC, without restarting that daemon. CLI
 startup is used only when the daemon is not running. The daemon socket uses
 WebSocket framing; a temporary standalone history reader uses JSONL. Device
 pairing also uses the existing connection and never restarts the host.
+
+### Permission settings
+
+Claude and Codex permissions are independent. Claude exposes its native
+`default`, `auto`, `acceptEdits`, `dontAsk`, `plan` and `bypassPermissions` modes.
+Codex exposes two native controls: `sandbox` (`read-only`, `workspace-write`,
+`danger-full-access`, or CLI default) and `approvalPolicy` (`on-request`, `never`,
+or CLI default). A read-only sandbox is not a Claude planning mode, and Claude’s
+`auto` / `acceptEdits` modes have no one-to-one Codex equivalent.
+
+Legacy shared `permissionMode` config is split once into independent settings,
+preserving the previous effective Codex sandbox and approval policy. For example,
+legacy `plan` retains Codex `read-only` plus `on-request`; this is a compatibility
+migration, not a claim that the modes are equivalent. New installs default Codex
+to `workspace-write` and `on-request`.
+The legacy field is kept in sync when saving Claude settings to support rollback.
+YOLO explicitly selects Claude `bypassPermissions`, or Codex `danger-full-access`
+plus `never`. Settings apply to new or resumed sessions; installed CLI and managed
+workspace policies can further restrict them. No database migration is required.
