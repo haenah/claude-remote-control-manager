@@ -19,9 +19,12 @@ import {
   type SheetFooterProps as SheetFooterPrimitiveProps,
   type SheetTitleProps as SheetTitlePrimitiveProps,
   type SheetDescriptionProps as SheetDescriptionPrimitiveProps,
+  useSheet,
 } from '@/components/animate-ui/primitives/radix/sheet';
 import { cn } from '@/lib/utils';
 import { XIcon } from 'lucide-react';
+import { useDragControls, type PanInfo } from 'motion/react';
+import * as React from 'react';
 
 type SheetProps = SheetPrimitiveProps;
 
@@ -56,13 +59,28 @@ type SheetContentProps = SheetContentPrimitiveProps & {
   showCloseButton?: boolean;
 };
 
+// A bottom sheet closes by dragging its handle down past this distance, or flicking it.
+const DISMISS_OFFSET = 120;
+const DISMISS_VELOCITY = 500;
+
+// Set inside a swipeable sheet: starts the dismiss drag from a pointer-down, so the header can act as the handle too.
+const SheetDragContext = React.createContext<((e: React.PointerEvent) => void) | null>(null);
+
 function SheetContent({
   className,
   children,
   side = 'right',
-  showCloseButton = true,
+  // Bottom sheets close by swiping the handle instead.
+  showCloseButton = side !== 'bottom',
   ...props
 }: SheetContentProps) {
+  const { setIsOpen } = useSheet();
+  const dragControls = useDragControls();
+  const swipeable = side === 'bottom';
+  const startDrag = React.useCallback((e: React.PointerEvent) => dragControls.start(e), [dragControls]);
+  const onDragEnd = (_: unknown, info: PanInfo) => {
+    if (info.offset.y > DISMISS_OFFSET || info.velocity.y > DISMISS_VELOCITY) setIsOpen(false);
+  };
   return (
     <SheetPortalPrimitive>
       <SheetOverlay />
@@ -76,9 +94,27 @@ function SheetContent({
           className,
         )}
         side={side}
+        {...(swipeable && {
+          drag: 'y' as const,
+          dragControls,
+          dragListener: false,
+          dragConstraints: { top: 0, bottom: 0 },
+          dragElastic: { top: 0, bottom: 1 },
+          // Radix's and motion's onDragEnd types collide in the merged props; this one is motion's.
+          onDragEnd: onDragEnd as unknown as SheetContentProps['onDragEnd'],
+        })}
         {...props}
       >
-        {children}
+        {swipeable && (
+          <div
+            aria-hidden
+            onPointerDown={startDrag}
+            className="sticky top-0 z-10 -mb-3 flex shrink-0 cursor-grab touch-none justify-center bg-inherit pt-2.5 pb-3 active:cursor-grabbing"
+          >
+            <div className="bg-muted-foreground/30 h-1 w-10 rounded-full" />
+          </div>
+        )}
+        <SheetDragContext.Provider value={swipeable ? startDrag : null}>{children}</SheetDragContext.Provider>
         {showCloseButton && (
           <SheetClose className="ring-offset-background focus:ring-ring data-[state=open]:bg-secondary absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none">
             <XIcon className="size-4" />
@@ -93,9 +129,11 @@ function SheetContent({
 type SheetHeaderProps = SheetHeaderPrimitiveProps;
 
 function SheetHeader({ className, ...props }: SheetHeaderProps) {
+  const startDrag = React.useContext(SheetDragContext);
   return (
     <SheetHeaderPrimitive
-      className={cn('flex flex-col gap-1.5 p-4', className)}
+      className={cn('flex flex-col gap-1.5 p-4', startDrag && 'cursor-grab touch-none select-none active:cursor-grabbing', className)}
+      onPointerDown={startDrag ?? undefined}
       {...props}
     />
   );

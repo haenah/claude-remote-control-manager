@@ -40,7 +40,6 @@ export function ProjectSheet({
           desktop ? "w-[440px] max-w-full" : "safe-bottom h-auto max-h-[92dvh] rounded-t-3xl",
         )}
       >
-        {!desktop && <div className="bg-muted-foreground/30 mx-auto mt-2.5 h-1 w-10 shrink-0 rounded-full" />}
         {shown && <ProjectBody key={shown.key} project={shown} sessions={sessions} yolo={yolo} />}
       </SheetContent>
     </Sheet>

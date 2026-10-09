@@ -28,7 +28,6 @@ export function SettingsSheet({ open, onOpenChange }: { open: boolean; onOpenCha
           desktop ? "w-[460px] max-w-full" : "safe-bottom h-[92dvh] rounded-t-3xl",
         )}
       >
-        {!desktop && <div className="bg-muted-foreground/30 mx-auto mt-2.5 h-1 w-10 shrink-0 rounded-full" />}
         <SheetHeader className="px-5 pt-4">
           <SheetTitle>Settings</SheetTitle>
           <SheetDescription className="sr-only">Sessions, remote hosts and sign-in</SheetDescription>
