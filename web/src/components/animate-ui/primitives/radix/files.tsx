@@ -81,7 +81,8 @@ function Files({
         onValueChange={setOpenValue}
         style={{
           position: 'relative',
-          overflow: 'auto',
+          // Each level grows with its folders; AccordionContent clips animations.
+          overflow: 'visible',
           ...style,
         }}
         {...props}
