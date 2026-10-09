@@ -103,7 +103,7 @@ test("remote shell scan matches local discovery and preserves unusual names", as
 
 test("existing default configs migrate and persist while custom roots remain", async () => {
   const module = join(import.meta.dir, "../src/config.ts");
-  for (const root of ["~/projects", "/home/haenah/projects", "/home/Developers", "/srv/custom"]) {
+  for (const root of ["~/projects", "/home/haenah/projects", "/home/Developers", "/home/Developer", "/home/haenah/Developer", "/srv/custom"]) {
     const path = join(dir, "config.json");
     await writeFile(path, JSON.stringify({ projectsDirs: [root], permissionMode: "plan" }));
     const proc = Bun.spawn([process.execPath, "-e", `const {config} = await import(${JSON.stringify(module)}); console.log(JSON.stringify(config.projectsDirs));`], {
@@ -111,7 +111,7 @@ test("existing default configs migrate and persist while custom roots remain", a
     });
     const output = await new Response(proc.stdout).text();
     expect(await proc.exited).toBe(0);
-    const expected = root === "/srv/custom" ? root : DEFAULT_PROJECTS_DIR;
+    const expected = ["/srv/custom", "/home/haenah/Developer"].includes(root) ? root : DEFAULT_PROJECTS_DIR;
     expect(JSON.parse(output)).toEqual([expected]);
     const saved = JSON.parse(await readFile(path, "utf8"));
     expect(saved.projectsDirs).toEqual([expected]);
