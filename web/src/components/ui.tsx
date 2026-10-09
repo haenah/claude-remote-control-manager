@@ -69,11 +69,8 @@ export function StatusDot({ tone, live, className }: { tone: "success" | "muted"
   return (
     <span className={cn("relative inline-flex size-2 shrink-0", className)}>
       {live && (
-        <motion.span
-          className={cn("absolute inset-0 rounded-full", color)}
-          animate={{ scale: [1, 2.4], opacity: [0.6, 0] }}
-          transition={{ duration: 1.8, repeat: Infinity, ease: "easeOut" }}
-        />
+        // CSS, not motion: a layout-animating parent re-measures on every poll and would reset the ring mid-pulse.
+        <span className={cn("status-pulse absolute inset-0 rounded-full", color)} />
       )}
       <span className={cn("relative inline-flex size-2 rounded-full", color)} />
     </span>

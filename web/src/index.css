@@ -162,6 +162,13 @@
 .safe-top { padding-top: max(var(--safe-top), 0.75rem); }
 .safe-bottom { padding-bottom: max(env(safe-area-inset-bottom), 1rem); }
 
+/* StatusDot's live ring. */
+.status-pulse { animation: status-pulse 1.8s ease-out infinite; }
+@keyframes status-pulse {
+  from { transform: scale(1); opacity: 0.6; }
+  to { transform: scale(2.4); opacity: 0; }
+}
+
 /* Soft glow behind the page, so the dark canvas isn't flat. */
 .app-glow {
   background:
