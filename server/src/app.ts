@@ -4,12 +4,12 @@ import { stat } from "node:fs/promises";
 import { hostname } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { DEFAULT_PROJECTS_DIR, PERMISSION_MODES, config, hostError, updateConfig, type PermissionMode, type RemoteHost } from "./config";
-import { acceptClaudeTrust, checkOnline, findHost, runScript } from "./hosts";
+import { checkOnline, findHost, runScript } from "./hosts";
 import { HttpError } from "./http";
 import { createProject, invalidateHostCache, listAllProjects, listProjectFiles, resolveProject } from "./projects";
-import * as sessions from "./sessions";
+import { sessionService } from "./sessions";
 import { listRecentProjects } from "./recent-projects";
-import { readHistory, readLiveSessions, type LiveSession } from "./claude-state";
+import type { LiveSession } from "../../shared/sessions";
 import { allowedOrigin, auth, loadAuth, requireAuth, type AuthEnv } from "./auth/routes";
 
 const ROOT = resolve(import.meta.dir, "../..");
@@ -62,33 +62,29 @@ app.use("/api/*", requireAuth);
 
 // ── Info / overview ──────────────────────────────────────────────────────
 
-let claudeVersion: { at: number; value: string | null } = { at: 0, value: null };
+app.get("/api/info", (c) => c.json({ version: VERSION, hostname: hostname().replace(/\.local$/, "") }));
 
-async function getClaudeVersion(): Promise<string | null> {
-  if (Date.now() - claudeVersion.at < 600_000) return claudeVersion.value;
-  try {
-    const res = await runScript(null, "claude --version\n", 15_000);
-    const value = res.stdout.trim().split(" ")[0] || null;
-    // Only a real answer is cached; a slow or failed probe is retried next time.
-    if (value) claudeVersion = { at: Date.now(), value };
-    return value;
-  } catch (e) {
-    console.warn(`claude --version: ${(e as Error).message}`);
-    return null;
-  }
+function requestedHost(name: string): RemoteHost | null {
+  if (!name) return null;
+  const host = findHost(name);
+  if (!host) throw new HttpError(404, `Host '${name}' is not configured`);
+  return host;
 }
 
-app.get("/api/info", async (c) =>
-  c.json({ version: VERSION, hostname: hostname().replace(/\.local$/, ""), claudeVersion: await getClaudeVersion() }),
-);
+app.get("/api/providers", async (c) => c.json(await sessionService.status(requestedHost(c.req.query("host") ?? ""))));
+
+app.post("/api/providers/:provider/pair", async (c) => {
+  const body = await c.req.json<{ host?: string }>();
+  return c.json(await sessionService.pair(c.req.param("provider"), requestedHost(body.host ?? "")));
+});
 
 /** Everything the main screen needs, in one round trip. */
 app.get("/api/overview", async (c) => {
   const [{ projects, hosts }, local, ...remote] = await Promise.all([
     listAllProjects(),
-    readLiveSessions(null),
+    sessionService.list(null),
     ...config.hosts.map((h) =>
-      readLiveSessions(h).catch((e) => {
+      sessionService.list(h).catch((e) => {
         // Unreachable: its sessions are unknown, not gone — just not listed.
         console.warn(`reading sessions on ${h.name}: ${(e as Error).message}`);
         return [] as LiveSession[];
@@ -111,7 +107,6 @@ app.post("/api/projects", async (c) => {
   const host = body.host ? findHost(body.host) : null;
   if (body.host && !host) throw new HttpError(404, `Host '${body.host}' is not configured`);
   const project = await createProject(String(body.name ?? "").trim(), host ?? null);
-  await acceptClaudeTrust(host ?? null, project.path);
   return c.json(project);
 });
 
@@ -124,60 +119,31 @@ function defaultName(label: string): string {
 }
 
 app.post("/api/projects/:key/sessions", async (c) => {
-  const body = await c.req.json<{ name?: string; yolo?: boolean }>().catch(() => ({}) as { name?: string; yolo?: boolean });
+  const body = await c.req.json<{ provider?: string; name?: string; yolo?: boolean }>();
   const { host, path, label } = await resolveProject(c.req.param("key"));
-  await acceptClaudeTrust(host, path);
-  return c.json(
-    await sessions.startSession({
-      projectPath: path,
-      name: body.name?.trim().slice(0, 100) || defaultName(label),
-      permissionMode: effectiveMode(body.yolo),
-      host,
-    }),
-  );
+  return c.json(await sessionService.launch(body.provider, {
+    host, projectPath: path, name: body.name?.trim().slice(0, 100) || defaultName(label),
+    permissionMode: effectiveMode(body.yolo),
+  }));
 });
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-
-/** Continue a past conversation of the project as a Remote Control session. */
 app.post("/api/projects/:key/resume", async (c) => {
-  const body = await c.req.json<{ conversationId: string; name?: string; yolo?: boolean }>();
-  if (!UUID.test(body.conversationId ?? "")) throw new HttpError(422, "Invalid conversation id");
+  const body = await c.req.json<{ provider?: string; conversationId: string; name?: string; yolo?: boolean }>();
+  if (!body.conversationId) throw new HttpError(422, "Conversation id is required");
   const { host, path, label } = await resolveProject(c.req.param("key"));
-  // Two processes appending to one transcript would interleave it.
-  const live = (await readLiveSessions(host)).find(
-    (s) => s.conversationId === body.conversationId || s.conversations.some((x) => x.id === body.conversationId),
-  );
-  if (live) throw new HttpError(409, "This conversation is already running", { url: live.url });
-  await acceptClaudeTrust(host, path);
-  return c.json(
-    await sessions.startSession({
-      projectPath: path,
-      name: body.name?.trim().slice(0, 100) || defaultName(label),
-      permissionMode: effectiveMode(body.yolo),
-      host,
-      resume: body.conversationId,
-    }),
-  );
+  return c.json(await sessionService.launch(body.provider, {
+    host, projectPath: path, name: body.name?.trim().slice(0, 100) || "",
+    permissionMode: effectiveMode(body.yolo), resume: body.conversationId,
+  }));
 });
 
 app.get("/api/projects/:key/history", async (c) => {
   const { host, path } = await resolveProject(c.req.param("key"));
-  const [past, live] = await Promise.all([readHistory(host, path), readLiveSessions(host)]);
-  const running = new Set(live.flatMap((s) => [s.conversationId, ...s.conversations.map((x) => x.id)]));
-  return c.json(past.map((p) => ({ ...p, live: running.has(p.id) })));
+  return c.json(await sessionService.history(c.req.query("provider"), host, path));
 });
 
-// ── Sessions ─────────────────────────────────────────────────────────────
-
-/** Stop a session (or bridge) by pid, on this machine or ?host=<name>. */
-app.delete("/api/sessions/:pid", async (c) => {
-  const pid = c.req.param("pid");
-  if (!/^\d+$/.test(pid)) throw new HttpError(422, "Invalid pid");
-  const hostName = c.req.query("host") ?? "";
-  const host = hostName ? findHost(hostName) : null;
-  if (hostName && !host) throw new HttpError(404, `Host '${hostName}' is not configured`);
-  await sessions.stopSession(host ?? null, Number(pid));
+app.delete("/api/providers/:provider/sessions/:id", async (c) => {
+  await sessionService.stop(c.req.param("provider"), requestedHost(c.req.query("host") ?? ""), c.req.param("id"));
   return c.json({ ok: true });
 });
 

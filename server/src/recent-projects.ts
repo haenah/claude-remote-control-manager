@@ -1,7 +1,6 @@
 import { db } from "./db";
-import type { LiveSession } from "./claude-state";
+import type { LiveSession, StartResult } from "../../shared/sessions";
 import type { Project } from "./projects";
-import type { StartResult } from "./sessions";
 
 export interface RecentProject extends Project {
   lastStartedAt: string;

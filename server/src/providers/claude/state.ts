@@ -16,8 +16,8 @@
  * same way. It copes with Linux (/proc) and macOS (lsof, ps) for development.
  */
 
-import type { RemoteHost } from "./config";
-import { runScript, shQuote } from "./hosts";
+import type { RemoteHost } from "../../config";
+import { runScript, shQuote } from "../../hosts";
 
 /** One live conversation on a bridge. */
 export interface Conversation {
@@ -111,13 +111,19 @@ function flag(argv: string, name: string): string | null {
   if (argv.includes("\x1f")) {
     const parts = argv.split("\x1f");
     for (let i = 0; i < parts.length; i++) {
-      if (parts[i] === name) return parts[i + 1] && !parts[i + 1]!.startsWith("--") ? parts[i + 1]! : "";
-      if (parts[i]!.startsWith(`${name}=`)) return parts[i]!.slice(name.length + 1);
+      if (parts[i] === name)
+        return parts[i + 1] && !parts[i + 1]!.startsWith("--")
+          ? parts[i + 1]!
+          : "";
+      if (parts[i]!.startsWith(`${name}=`))
+        return parts[i]!.slice(name.length + 1);
     }
     return null;
   }
   // A space-joined ps line: a value runs to the next flag.
-  const m = argv.match(new RegExp(`(?:^|\\s)${name}(?:=|\\s+)(?!--)(.*?)(?=\\s--|$)`));
+  const m = argv.match(
+    new RegExp(`(?:^|\\s)${name}(?:=|\\s+)(?!--)(.*?)(?=\\s--|$)`),
+  );
   if (m) return m[1]!.trim();
   return new RegExp(`(?:^|\\s)${name}(?:\\s|$)`).test(argv) ? "" : null;
 }
@@ -140,13 +146,17 @@ function parseDate(s: string | undefined): string | null {
 /** Epoch seconds → ISO, or null for anything that isn't one. */
 function epoch(s: string | undefined): string | null {
   const n = Number(s);
-  return s && Number.isFinite(n) && n > 0 ? new Date(n * 1000).toISOString() : null;
+  return s && Number.isFinite(n) && n > 0
+    ? new Date(n * 1000).toISOString()
+    : null;
 }
 
 const sessionUrl = (id: string) => `https://claude.ai/code/${id}`;
 
 /** Every live remote-control session on *host*. Throws HostUnreachable for a remote host that can't be reached. */
-export async function readLiveSessions(host: RemoteHost | null): Promise<LiveSession[]> {
+export async function readLiveSessions(
+  host: RemoteHost | null,
+): Promise<LiveSession[]> {
   const res = await runScript(host, STATE_SCRIPT, 20_000);
   return parseState(res.stdout, host?.name ?? "");
 }
@@ -155,7 +165,10 @@ export async function readLiveSessions(host: RemoteHost | null): Promise<LiveSes
 export function parseState(stdout: string, hostName: string): LiveSession[] {
   const sessions = new Map<number, LiveSession>();
   const children: { ppid: number; json: Record<string, unknown> }[] = [];
-  const transcripts = new Map<string, { title: string | null; mtime: string | null }>();
+  const transcripts = new Map<
+    string,
+    { title: string | null; mtime: string | null }
+  >();
 
   for (const line of stdout.split("\n")) {
     const f = line.split("\t");
@@ -163,7 +176,8 @@ export function parseState(stdout: string, hostName: string): LiveSession[] {
       const [, pid, cwd, argv, log, url, pointer, lstart] = f as string[];
       // `claude remote-control …` is a bridge; `claude --remote-control …` an interactive session.
       const bridge = argv!.split(/[\x1f\s]+/)[1] === "remote-control";
-      let ptr: { sessionId?: string; environmentId?: string; pid?: number } = {};
+      let ptr: { sessionId?: string; environmentId?: string; pid?: number } =
+        {};
       try {
         ptr = pointer ? JSON.parse(pointer) : {};
       } catch {
@@ -176,12 +190,25 @@ export function parseState(stdout: string, hostName: string): LiveSession[] {
         pid: Number(pid),
         cwd: cwd!,
         kind: bridge ? "bridge" : "interactive",
-        name: (bridge ? flag(argv!, "--name") : flag(argv!, "--remote-control")) || null,
+        name:
+          (bridge ? flag(argv!, "--name") : flag(argv!, "--remote-control")) ||
+          null,
         title: null,
-        conversationId: bridge ? null : flag(argv!, "--session-id") || flag(argv!, "--resume") || null,
-        url: url || (ownPointer && ptr.sessionId ? sessionUrl(ptr.sessionId) : null),
-        envUrl: ownPointer && ptr.environmentId ? `https://claude.ai/code?environment=${ptr.environmentId}` : null,
-        permissionMode: flag(argv!, "--permission-mode") || (flag(argv!, "--dangerously-skip-permissions") !== null ? "bypassPermissions" : null),
+        conversationId: bridge
+          ? null
+          : flag(argv!, "--session-id") || flag(argv!, "--resume") || null,
+        url:
+          url ||
+          (ownPointer && ptr.sessionId ? sessionUrl(ptr.sessionId) : null),
+        envUrl:
+          ownPointer && ptr.environmentId
+            ? `https://claude.ai/code?environment=${ptr.environmentId}`
+            : null,
+        permissionMode:
+          flag(argv!, "--permission-mode") ||
+          (flag(argv!, "--dangerously-skip-permissions") !== null
+            ? "bypassPermissions"
+            : null),
         startedAt: parseDate(lstart),
         lastActivity: null,
         managed: !!log,
@@ -189,7 +216,10 @@ export function parseState(stdout: string, hostName: string): LiveSession[] {
       });
     } else if (f[0] === "C" && f.length >= 3) {
       try {
-        children.push({ ppid: Number(f[1]), json: JSON.parse(f.slice(2).join("\t")) });
+        children.push({
+          ppid: Number(f[1]),
+          json: JSON.parse(f.slice(2).join("\t")),
+        });
       } catch {
         // Half-written session file.
       }
@@ -210,7 +240,10 @@ export function parseState(stdout: string, hostName: string): LiveSession[] {
       url: sessionUrl(json.bridgeSessionId),
       status: typeof json.status === "string" ? json.status : null,
       title: transcripts.get(String(json.sessionId))?.title ?? null,
-      updatedAt: typeof json.updatedAt === "number" ? new Date(json.updatedAt).toISOString() : null,
+      updatedAt:
+        typeof json.updatedAt === "number"
+          ? new Date(json.updatedAt).toISOString()
+          : null,
     });
   }
   for (const s of sessions.values()) {
@@ -218,7 +251,14 @@ export function parseState(stdout: string, hostName: string): LiveSession[] {
     s.title = t?.title ?? null;
     // The transcript moves when the conversation does; the terminal log
     // (repainted constantly by the TUI) would always read "just now".
-    s.lastActivity = t?.mtime ?? s.conversations.map((c) => c.updatedAt).filter(Boolean).sort().at(-1) ?? null;
+    s.lastActivity =
+      t?.mtime ??
+      s.conversations
+        .map((c) => c.updatedAt)
+        .filter(Boolean)
+        .sort()
+        .at(-1) ??
+      null;
   }
   return [...sessions.values()];
 }
@@ -236,27 +276,45 @@ done
 
 /** The first thing the user said, from a (possibly truncated) transcript line. */
 function firstPrompt(line: string): { text: string | null; at: string | null } {
-  let msg: { message?: { content?: unknown }; timestamp?: string } | null = null;
+  let msg: { message?: { content?: unknown }; timestamp?: string } | null =
+    null;
   try {
     msg = JSON.parse(line);
   } catch {
     const m = line.match(/"content":"((?:[^"\\]|\\.)*)/);
     const at = line.match(/"timestamp":"([^"]+)"/)?.[1] ?? null;
-    return { text: m ? m[1]!.replace(/\\n/g, " ").replace(/\\(.)/g, "$1") : null, at };
+    return {
+      text: m ? m[1]!.replace(/\\n/g, " ").replace(/\\(.)/g, "$1") : null,
+      at,
+    };
   }
   const c = msg?.message?.content;
   const text =
     typeof c === "string"
       ? c
       : Array.isArray(c)
-        ? (c.find((p: { type?: string }) => p?.type === "text") as { text?: string } | undefined)?.text
+        ? (
+            c.find((p: { type?: string }) => p?.type === "text") as
+              { text?: string } | undefined
+          )?.text
         : undefined;
-  return { text: text?.replace(/\s+/g, " ").trim().slice(0, 200) || null, at: msg?.timestamp ?? null };
+  return {
+    text: text?.replace(/\s+/g, " ").trim().slice(0, 200) || null,
+    at: msg?.timestamp ?? null,
+  };
 }
 
 /** Past conversations in *cwd* on *host*, newest first. */
-export async function readHistory(host: RemoteHost | null, cwd: string, limit = 60): Promise<PastConversation[]> {
-  const res = await runScript(host, `set -- ${shQuote(cwd)} ${limit}\n${HISTORY_SCRIPT}`, 20_000);
+export async function readHistory(
+  host: RemoteHost | null,
+  cwd: string,
+  limit = 60,
+): Promise<PastConversation[]> {
+  const res = await runScript(
+    host,
+    `set -- ${shQuote(cwd)} ${limit}\n${HISTORY_SCRIPT}`,
+    20_000,
+  );
   return parseHistory(res.stdout);
 }
 
@@ -267,7 +325,8 @@ export function parseHistory(stdout: string): PastConversation[] {
     if (f[0] !== "H" || !f[1]) continue;
     const first = firstPrompt(f.slice(5).join("\t"));
     // Slash-command and hook noise make poor titles.
-    const prompt = first.text && !first.text.startsWith("<") ? first.text : null;
+    const prompt =
+      first.text && !first.text.startsWith("<") ? first.text : null;
     out.push({
       id: f[1],
       title: aiTitle(f[4]),

@@ -1,12 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUpRight, Zap } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/animate-ui/components/buttons/button";
 import { FileItem, Files, FolderContent, FolderItem, FolderTrigger, SubFiles } from "@/components/animate-ui/components/radix/files";
-import { useStartSession } from "@/hooks/queries";
 import { api } from "@/lib/api";
 import type { LiveSession, Project, ProjectFile, StartResult } from "@/lib/types";
 import { Badge, Spinner } from "./ui";
+import { SessionLaunchActions } from "./session-controls";
 
 type Node = { project: Project; children: Node[] };
 type TreeProps = {
@@ -15,7 +15,7 @@ type TreeProps = {
   sessions: Map<string, LiveSession[]>;
   yolo: boolean;
   onOpen: (key: string) => void;
-  onStarted: (result: StartResult, label: string) => void;
+  onStarted: (result: StartResult, project: Project) => void;
 };
 
 export function ProjectTree(props: TreeProps) {
@@ -75,7 +75,6 @@ function TreeLevel({ nodes, ...props }: TreeProps & { nodes: Node[] }) {
 function TreeFolder({ node, expanded, ...props }: TreeProps & { node: Node; expanded: boolean }) {
   const p = node.project;
   const live = props.sessions.get(p.key)?.length ?? 0;
-  const start = useStartSession(p.key);
   const files = useQuery({
     queryKey: ["project-files", p.key],
     queryFn: () => api<ProjectFile[]>(`/projects/${encodeURIComponent(p.key)}/files`),
@@ -93,15 +92,7 @@ function TreeFolder({ node, expanded, ...props }: TreeProps & { node: Node; expa
         <Button size="icon-sm" variant="ghost" aria-label={`Open ${p.path}`} onClick={() => props.onOpen(p.key)}>
           <ArrowUpRight />
         </Button>
-        <Button
-          size="icon-sm" variant="ghost"
-          className={props.yolo ? "text-destructive" : "text-clay"}
-          aria-label={`Start a session in ${p.path}`}
-          disabled={start.isPending}
-          onClick={() => start.mutate({ yolo: props.yolo }, { onSuccess: (r) => props.onStarted(r, p.label) })}
-        >
-          {start.isPending ? <Spinner /> : <Zap />}
-        </Button>
+        <SessionLaunchActions project={p} yolo={props.yolo} onResult={props.onStarted} />
       </div>
       <FolderContent>
         {node.children.length > 0 && <TreeLevel nodes={node.children} {...props} />}

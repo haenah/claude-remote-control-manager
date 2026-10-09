@@ -1,7 +1,7 @@
 {
   "name": "rcm",
   "version": "0.1.0",
-  "description": "Self-hosted manager for Claude Code Remote Control sessions, behind passkey sign-in",
+  "description": "Self-hosted manager for Claude and Codex remote sessions, behind passkey sign-in",
   "private": true,
   "type": "module",
   "workspaces": ["server", "web"],

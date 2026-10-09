@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { HISTORY_SCRIPT, parseHistory, parseState } from "../src/claude-state";
+import { HISTORY_SCRIPT, parseHistory, parseState } from "../src/providers/claude/state";
 import { runScript, shQuote } from "../src/hosts";
 
 const ID = "d93a0993-f739-4543-909e-ee5a7321f390";

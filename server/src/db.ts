@@ -1,6 +1,6 @@
 /**
  * SQLite — sign-in state and the last successful session start per directory.
- * Session details are read directly from Claude (see claude-state.ts).
+ * Session details are read directly from each provider's native state.
  */
 
 import { Database } from "bun:sqlite";

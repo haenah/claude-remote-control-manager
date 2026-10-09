@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { exitReason, extractSessionUrl, stripAnsi } from "../src/sessions";
+import { exitReason, extractSessionUrl, stripAnsi } from "../src/providers/claude/launcher";
 
 test("extractSessionUrl takes the newest link, including OSC-8 hyperlink targets", () => {
   const log = [

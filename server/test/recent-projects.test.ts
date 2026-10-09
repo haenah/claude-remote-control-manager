@@ -4,11 +4,11 @@ import { dbPath } from "../src/config";
 import { db } from "../src/db";
 import type { Project } from "../src/projects";
 import { listRecentProjects, rememberSessionStart } from "../src/recent-projects";
-import type { StartResult } from "../src/sessions";
+import type { StartResult } from "../../shared/sessions";
 
 const host = "test-recent";
-const running: StartResult = { status: "running", url: "https://claude.ai/code/session_fixture", name: "test", conversationId: "fixture" };
-const failed: StartResult = { ...running, status: "failed", url: null };
+const running: StartResult = { provider: "claude", status: "running", access: { kind: "url", url: "https://claude.ai/code/session_fixture", label: "Claude" }, name: "test", conversationId: "fixture" };
+const failed: StartResult = { ...running, status: "failed", access: null };
 const firstAt = "2026-10-09T01:00:00.000Z";
 const nextAt = "2026-10-09T02:00:00.000Z";
 const latestAt = "2026-10-09T03:00:00.000Z";

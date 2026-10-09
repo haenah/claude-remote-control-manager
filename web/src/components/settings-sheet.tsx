@@ -7,7 +7,7 @@ import { Button } from "@/components/animate-ui/components/buttons/button";
 import { CopyButton } from "@/components/animate-ui/components/buttons/copy";
 import { Tabs, TabsContent, TabsContents, TabsList, TabsTrigger } from "@/components/animate-ui/components/animate/tabs";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/animate-ui/components/radix/sheet";
-import { useInfo } from "@/hooks/queries";
+import { useInfo, useProviders } from "@/hooks/queries";
 import { useIsDesktop } from "@/hooks/use-is-desktop";
 import { api, queryClient } from "@/lib/api";
 import { ago } from "@/lib/format";
@@ -15,6 +15,7 @@ import { registerPasskey } from "@/lib/passkey";
 import type { HostStatus, Passkey, Settings } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { Confirm, PromptDialog } from "./dialogs";
+import { ProviderLogo } from "./session-controls";
 import { Badge, Input, Label, SectionTitle, Spinner, StatusDot, Textarea } from "./ui";
 
 export function SettingsSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
@@ -70,6 +71,7 @@ const MODE_INFO: Record<string, string> = {
 function GeneralTab() {
   const settings = useQuery({ queryKey: ["settings"], queryFn: () => api<Settings>("/settings") });
   const info = useInfo();
+  const providers = useProviders();
   const [dirs, setDirs] = useState("");
   useEffect(() => {
     if (settings.data) setDirs(settings.data.projectsDirs.join("\n"));
@@ -138,7 +140,7 @@ function GeneralTab() {
         <section className="text-muted-foreground space-y-1 rounded-lg border p-3 font-mono text-xs">
           <p>host · {info.data.hostname}</p>
           <p>rcm · v{info.data.version}</p>
-          <p>claude · {info.data.claudeVersion ?? "not found on PATH"}</p>
+          {providers.data?.map((p) => <p key={p.id} className="flex items-center gap-2"><ProviderLogo provider={p.id} className="size-3.5" />{p.label} · {p.version ?? "not available on this host"}</p>)}
         </section>
       )}
     </div>
@@ -184,8 +186,8 @@ function HostsTab() {
   return (
     <div className="space-y-4">
       <p className="text-muted-foreground px-1 text-xs leading-relaxed">
-        Manage projects on other machines over ssh. Each needs key-based ssh from this machine, <code>claude</code> on its
-        PATH, and <code>loginctl enable-linger</code> so sessions outlive the connection.
+        Manage projects on other machines over ssh. Each needs key-based ssh and the selected engine’s CLI installed and signed in.
+        Claude hosts also need <code>loginctl enable-linger</code> so sessions outlive the connection.
       </p>
 
       {hosts.isPending ? (

@@ -15,7 +15,7 @@
  *    (0x1e) marker before its real output and callers keep only what follows.
  */
 
-import { mkdirSync, readFileSync, renameSync, writeFileSync, existsSync, realpathSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { RemoteHost } from "./config";
@@ -88,15 +88,35 @@ function sshArgv(host: RemoteHost): string[] {
   mkdirSync(CONTROL_DIR, { recursive: true });
   return [
     "ssh",
-    "-o", "BatchMode=yes",
-    "-o", "ConnectTimeout=5",
-    "-o", "ServerAliveInterval=10",
-    "-o", "ControlMaster=auto",
-    "-o", "ControlPersist=300",
-    "-o", `ControlPath=${CONTROL_DIR}/cm-%C`,
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ConnectTimeout=5",
+    "-o",
+    "ServerAliveInterval=10",
+    "-o",
+    "ControlMaster=auto",
+    "-o",
+    "ControlPersist=300",
+    "-o",
+    `ControlPath=${CONTROL_DIR}/cm-%C`,
     host.ssh,
-    "bash", "-ls",
+    "bash",
+    "-ls",
   ];
+}
+
+/** Streaming stdio for protocol clients; only the dedicated proxy is stopped. */
+export function spawnScript(host: RemoteHost | null, script: string) {
+  const argv = host
+    ? [...sshArgv(host).slice(0, -2), "bash", "-lc", shQuote(script)]
+    : ["bash", "-lc", script];
+  return Bun.spawn(argv, {
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+    env: localEnv(),
+  });
 }
 
 /**
@@ -128,8 +148,12 @@ export async function runScript(
   ]);
   clearTimeout(timer);
   const where = host ? `${host.name} (${host.ssh})` : "local";
-  if (timedOut) throw new HostUnreachable(`timed out after ${timeoutMs / 1000}s running script on ${where}`);
-  if (host && code === 255) throw new HostUnreachable(`ssh to ${where} failed: ${stderr.trim()}`);
+  if (timedOut)
+    throw new HostUnreachable(
+      `timed out after ${timeoutMs / 1000}s running script on ${where}`,
+    );
+  if (host && code === 255)
+    throw new HostUnreachable(`ssh to ${where} failed: ${stderr.trim()}`);
   const i = stdout.indexOf(MARKER);
   return { code, stdout: i === -1 ? stdout : stdout.slice(i + 1), stderr };
 }
@@ -142,63 +166,5 @@ export async function checkOnline(host: RemoteHost): Promise<string | null> {
     return res.stdout.includes("ok") ? null : "no response";
   } catch (e) {
     return (e as Error).message;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Claude's folder trust prompt
-// ---------------------------------------------------------------------------
-
-const TRUST_PY = `import json, os, sys
-path = os.path.expanduser('~/.claude.json')
-try:
-    data = json.load(open(path))
-except Exception:
-    data = {}
-entry = data.setdefault('projects', {}).setdefault(sys.argv[1], {})
-if not entry.get('hasTrustDialogAccepted'):
-    entry['hasTrustDialogAccepted'] = True
-    tmp = path + '.rcm-tmp'
-    with open(tmp, 'w') as fh:
-        json.dump(data, fh, indent=2)
-    os.replace(tmp, path)
-`;
-
-/**
- * Mark *projectPath* trusted in the host's ~/.claude.json. Otherwise a
- * remote-control session blocks on a "Do you trust this folder?" prompt that
- * nobody is there to answer.
- */
-export async function acceptClaudeTrust(host: RemoteHost | null, projectPath: string): Promise<void> {
-  if (host) {
-    try {
-      const res = await runScript(
-        host,
-        `python3 - ${shPath(projectPath)} <<'RCM_PY'\n${TRUST_PY}RCM_PY\n`,
-        15_000,
-      );
-      if (res.code !== 0) console.warn(`trust for ${projectPath} on ${host.name}: ${res.stderr.trim()}`);
-    } catch (e) {
-      console.warn(`trust on ${host.name}: ${(e as Error).message}`);
-    }
-    return;
-  }
-  const file = join(homedir(), ".claude.json");
-  let data: { projects?: Record<string, Record<string, unknown>> } = {};
-  try {
-    if (existsSync(file)) data = JSON.parse(readFileSync(file, "utf8"));
-  } catch {
-    // An unreadable file is rewritten below rather than left blocking sessions.
-  }
-  const key = realpathSync(projectPath);
-  const entry = ((data.projects ??= {})[key] ??= {});
-  if (entry.hasTrustDialogAccepted) return;
-  entry.hasTrustDialogAccepted = true;
-  try {
-    const tmp = `${file}.rcm-tmp`;
-    writeFileSync(tmp, JSON.stringify(data, null, 2));
-    renameSync(tmp, file);
-  } catch (e) {
-    console.warn(`could not write trust entry to ~/.claude.json: ${(e as Error).message}`);
   }
 }

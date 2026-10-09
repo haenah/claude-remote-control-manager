@@ -1,4 +1,4 @@
-import { FolderPlus, Search, Settings2, Zap } from "lucide-react";
+import { FolderPlus, Search, Settings2, ShieldAlert } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -6,7 +6,7 @@ import { Button } from "@/components/animate-ui/components/buttons/button";
 import { Switch } from "@/components/animate-ui/components/radix/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/animate-ui/components/animate/tabs";
 import { SlidingNumber } from "@/components/animate-ui/primitives/texts/sliding-number";
-import { sessionKey, useInfo, useOverview, useStartSession } from "@/hooks/queries";
+import { sessionKey, useInfo, useOverview } from "@/hooks/queries";
 import { useLocalStorage } from "@/hooks/use-local-storage";
 import { ago } from "@/lib/format";
 import type { LiveSession, Project, RecentProject, StartResult } from "@/lib/types";
@@ -16,23 +16,10 @@ import { ProjectSheet } from "./project-sheet";
 import { ProjectTree } from "./project-tree";
 import { SessionRow } from "./session-row";
 import { SettingsSheet } from "./settings-sheet";
-import { Badge, Input, Logo, SectionTitle, Spinner, StatusDot } from "./ui";
+import { SessionLaunchActions, SessionResultDialog } from "./session-controls";
+import { Badge, Input, Logo, SectionTitle, StatusDot } from "./ui";
 
 type View = "tree" | "recent";
-
-/** Toast the outcome of a start, with an attach action when it worked. */
-export function announceStart(res: StartResult, label: string) {
-  if (res.status === "running" && res.url) {
-    const url = res.url;
-    toast.success(res.name, {
-      description: `${label} — session is ready`,
-      action: { label: "Attach", onClick: () => window.open(url, "_blank", "noopener,noreferrer") },
-      duration: 20_000,
-    });
-  } else {
-    toast.error(`Could not start ${label}`, { description: res.error ?? "Unknown error", duration: 12_000 });
-  }
-}
 
 export function Dashboard() {
   const overview = useOverview();
@@ -45,6 +32,8 @@ export function Dashboard() {
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [started, setStarted] = useState<{ result: StartResult; project: Project } | null>(null);
+  const showResult = (result: StartResult, project: Project) => setStarted({ result, project });
 
   const data = overview.data;
   const sessionsByProject = useMemo(() => {
@@ -77,7 +66,7 @@ export function Dashboard() {
           <div className="min-w-0 flex-1 leading-tight">
             <h1 className="font-semibold tracking-tight">rc manager</h1>
             <p className="text-muted-foreground truncate font-mono text-[11px]">
-              {info.data ? `v${info.data.version} · claude ${info.data.claudeVersion ?? "?"}` : " "}
+              {info.data ? `v${info.data.version}` : " "}
             </p>
           </div>
           <div className="hidden items-center gap-1.5 sm:flex">
@@ -101,7 +90,7 @@ export function Dashboard() {
               yolo ? "border-destructive/40 bg-destructive/10 text-destructive" : "text-muted-foreground",
             )}
           >
-            <Zap className={cn("size-4", yolo && "fill-current")} />
+            <ShieldAlert className={cn("size-4", yolo && "fill-current")} />
             YOLO
             <Switch checked={yolo} onCheckedChange={setYolo} className="data-[state=checked]:bg-destructive" />
           </label>
@@ -180,7 +169,7 @@ export function Dashboard() {
               {query ? "No match." : view === "recent" ? "No recent sessions yet — start a session from folders." : "No folders found — add a project directory in settings, or create one."}
             </p>
           ) : view === "tree" ? (
-            <ProjectTree projects={data?.projects ?? []} query={query} sessions={sessionsByProject} yolo={yolo} onOpen={setOpenKey} onStarted={announceStart} />
+            <ProjectTree projects={data?.projects ?? []} query={query} sessions={sessionsByProject} yolo={yolo} onOpen={setOpenKey} onStarted={showResult} />
           ) : (
             <motion.ul layout className="grid gap-2">
               <AnimatePresence initial={false}>
@@ -192,6 +181,7 @@ export function Dashboard() {
                     live={sessionsByProject.get(p.key)?.length ?? 0}
                     yolo={yolo}
                     onOpen={() => setOpenKey(p.key)}
+                    onResult={showResult}
                   />
                 ))}
               </AnimatePresence>
@@ -216,6 +206,7 @@ export function Dashboard() {
         yolo={yolo}
         onClose={() => setOpenKey(null)}
       />
+      <SessionResultDialog value={started} onClose={() => setStarted(null)} />
       <SettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} />
       <NewProjectDialog
         open={newProjectOpen}
@@ -251,14 +242,15 @@ function ProjectCard({
   live,
   yolo,
   onOpen,
+  onResult,
 }: {
   project: RecentProject;
   index: number;
   live: number;
   yolo: boolean;
   onOpen: () => void;
+  onResult: (result: StartResult, project: Project) => void;
 }) {
-  const start = useStartSession(project.key);
   return (
     <motion.li
       layout
@@ -287,21 +279,7 @@ function ProjectCard({
           </Badge>
         )}
       </button>
-      <Button
-        variant="ghost"
-        hoverScale={1}
-        className={cn(
-          "h-auto shrink-0 rounded-none border-l px-5",
-          yolo ? "text-destructive hover:bg-destructive/10" : "text-clay hover:bg-clay/10",
-        )}
-        aria-label={`Start a session in ${project.label}`}
-        disabled={start.isPending}
-        onClick={() =>
-          start.mutate({ yolo }, { onSuccess: (res) => announceStart(res, project.label) })
-        }
-      >
-        {start.isPending ? <Spinner /> : <Zap className="size-5" />}
-      </Button>
+      <div className="flex items-center border-l px-2"><SessionLaunchActions project={project} yolo={yolo} onResult={onResult} /></div>
     </motion.li>
   );
 }
